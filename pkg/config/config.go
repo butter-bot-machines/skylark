@@ -16,6 +16,7 @@ type Config struct {
 	Workers         WorkerConfig           `yaml:"workers"`
 	WatchPaths      []string              `yaml:"watch_paths"`
 	FileWatch       FileWatchConfig       `yaml:"file_watch"`
+	Security        SecurityConfig         `yaml:"security"`
 }
 
 // EnvironmentConfig contains environment-specific settings
@@ -104,4 +105,9 @@ func (c *Config) GetDefaultAssistant() (Assistant, bool) {
 		return Assistant{}, false
 	}
 	return c.GetAssistantConfig(c.DefaultAssistant)
+}
+
+// GetSecurityConfig returns the security configuration
+func (c *Config) GetSecurityConfig() SecurityConfig {
+	return c.Security
 }
