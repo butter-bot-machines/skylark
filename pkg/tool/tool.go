@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 )
 
 // Tool represents a compiled tool binary and its metadata
@@ -58,7 +60,7 @@ func (m *Manager) LoadTool(name string) (*Tool, error) {
 		return tool, nil
 	}
 
-	toolPath := filepath.Join(m.basePath, "tools", name)
+	toolPath := filepath.Join(m.basePath, name)
 	mainFile := filepath.Join(toolPath, "main.go")
 
 	// Check if main.go exists
@@ -94,7 +96,7 @@ func (m *Manager) LoadTool(name string) (*Tool, error) {
 
 // Compile compiles the tool's source code
 func (m *Manager) Compile(name string) error {
-	toolPath := filepath.Join(m.basePath, "tools", name)
+	toolPath := filepath.Join(m.basePath, name)
 	mainFile := filepath.Join(toolPath, "main.go")
 	binaryPath := filepath.Join(toolPath, name)
 
@@ -153,15 +155,41 @@ func (t *Tool) checkHealth() error {
 }
 
 // Execute runs the tool with the provided input and environment
-func (t *Tool) Execute(input []byte, env map[string]string) ([]byte, error) {
+func (t *Tool) Execute(input []byte, env map[string]string, sb *sandbox.Sandbox) ([]byte, error) {
 	binaryPath := filepath.Join(t.Path, t.Name)
 	cmd := exec.Command(binaryPath)
+
+	// Build environment from schema
+	cmdEnv := make([]string, 0, len(t.Schema.Env)+1)
 	
-	// Set up environment
-	cmd.Env = os.Environ() // Start with current environment
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	// Add PATH for binary execution
+	if path := os.Getenv("PATH"); path != "" {
+		cmdEnv = append(cmdEnv, "PATH="+path)
 	}
+	for name, spec := range t.Schema.Env {
+		// Try config value first
+		if value, ok := env[name]; ok {
+			fmt.Printf("Using config value for %s: %s\n", name, value)
+			cmdEnv = append(cmdEnv, fmt.Sprintf("%s=%s", name, value))
+			continue
+		}
+
+		// Fall back to current environment
+		if value := os.Getenv(name); value != "" {
+			fmt.Printf("Using env value for %s: %s\n", name, value)
+			cmdEnv = append(cmdEnv, fmt.Sprintf("%s=%s", name, value))
+			continue
+		}
+
+		// Use default if available
+		if spec.Default != nil {
+			fmt.Printf("Using default value for %s: %v\n", name, spec.Default)
+			cmdEnv = append(cmdEnv, fmt.Sprintf("%s=%v", name, spec.Default))
+		}
+	}
+
+	fmt.Printf("Final env: %v\n", cmdEnv)
+	cmd.Env = cmdEnv
 
 	// Set up pipes
 	stdin, err := cmd.StdinPipe()
@@ -173,29 +201,45 @@ func (t *Tool) Execute(input []byte, env map[string]string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 
-	// Start the command
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start tool: %w", err)
-	}
+	// Create channel to signal stdin write completion
+	done := make(chan error)
 
-	// Write input in a goroutine
+	// Write input in goroutine
 	go func() {
-		defer stdin.Close()
-		stdin.Write(input)
+		_, err := stdin.Write(input)
+		stdin.Close()
+		done <- err
 	}()
 
-	// Read output
-	output, err := io.ReadAll(stdout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read output: %w", err)
+	// Start reading output before executing
+	outputCh := make(chan []byte)
+	errCh := make(chan error)
+	go func() {
+		output, err := io.ReadAll(stdout)
+		if err != nil {
+			errCh <- fmt.Errorf("failed to read output: %w", err)
+			return
+		}
+		outputCh <- output
+	}()
+
+	// Wait for stdin write to complete
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("failed to write input: %w", err)
 	}
 
-	// Wait for command to complete
-	if err := cmd.Wait(); err != nil {
+	// Execute in sandbox
+	if err := sb.Execute(cmd); err != nil {
 		return nil, fmt.Errorf("tool execution failed: %w", err)
 	}
 
-	return output, nil
+	// Get output or error
+	select {
+	case err := <-errCh:
+		return nil, err
+	case output := <-outputCh:
+		return output, nil
+	}
 }
 
 // ValidateInput checks if the input matches the tool's schema

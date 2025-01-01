@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "You exceeded your current quota, please check your plan and billing details.",
+    "param": null,
+    "type": "rate_limit_error"
+  }
+}

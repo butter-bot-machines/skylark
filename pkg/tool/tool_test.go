@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 )
 
 func setupTestTool(t *testing.T, name string) string {
 	// Create temporary directory
 	tempDir := t.TempDir()
-	toolDir := filepath.Join(tempDir, "tools", name)
+	toolDir := filepath.Join(tempDir, name)
 	err := os.MkdirAll(toolDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
@@ -167,7 +169,16 @@ func TestToolManager(t *testing.T) {
 		"API_KEY": "test-execution-key",
 	}
 
-	output, err := tool.Execute(inputJSON, env)
+	// Create sandbox for test
+	sb, err := sandbox.NewSandbox(basePath, &sandbox.DefaultLimits, &sandbox.NetworkPolicy{
+		AllowOutbound: false,
+		AllowInbound:  false,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+
+	output, err := tool.Execute(inputJSON, env, sb)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

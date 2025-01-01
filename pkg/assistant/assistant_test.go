@@ -1,97 +1,55 @@
 package assistant
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/butter-bot-machines/skylark/pkg/parser"
+	"github.com/butter-bot-machines/skylark/pkg/provider"
+	"github.com/butter-bot-machines/skylark/pkg/sandbox"
+	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
 
-func TestParsePromptFile(t *testing.T) {
-	validContent := `---
-name: test-assistant
-description: A test assistant
-model: gpt-4
-tools:
-  - summarize
-  - search
-config:
-  max_tokens: 1000
-  temperature: 0.7
----
-You are a helpful assistant that provides accurate and concise information.
-`
+// mockProvider implements provider.Provider for testing
+type mockProvider struct {
+	response string
+	err      error
+}
 
-	tests := []struct {
-		name        string
-		content     string
-		wantError   bool
-		wantModel   string
-		wantPrompt  string
-		wantTools   int
-		wantMaxTokens int
-	}{
-		{
-			name:        "valid prompt file",
-			content:     validContent,
-			wantError:   false,
-			wantModel:   "gpt-4",
-			wantPrompt:  "You are a helpful assistant that provides accurate and concise information.",
-			wantTools:   2,
-			wantMaxTokens: 1000,
-		},
-		{
-			name: "missing required fields",
-			content: `---
-description: Missing required fields
----
-Prompt content
-`,
-			wantError: true,
-		},
-		{
-			name:      "invalid yaml",
-			content:   "---\nname: [invalid yaml\n---\nContent",
-			wantError: true,
-		},
-		{
-			name:      "missing front-matter",
-			content:   "No front-matter here",
-			wantError: true,
-		},
+func (m *mockProvider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
+	if m.err != nil {
+		return nil, m.err
 	}
+	return &provider.Response{
+		Content: m.response,
+		Usage: provider.Usage{
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			TotalTokens:      150,
+		},
+	}, nil
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assistant, err := parsePromptFile("test", []byte(tt.content))
-			if (err != nil) != tt.wantError {
-				t.Errorf("parsePromptFile() error = %v, wantError %v", err, tt.wantError)
-				return
-			}
-			if !tt.wantError {
-				if assistant.Model != tt.wantModel {
-					t.Errorf("Model = %v, want %v", assistant.Model, tt.wantModel)
-				}
-				if assistant.Prompt != tt.wantPrompt {
-					t.Errorf("Prompt = %v, want %v", assistant.Prompt, tt.wantPrompt)
-				}
-				if len(assistant.Tools) != tt.wantTools {
-					t.Errorf("Tools length = %v, want %v", len(assistant.Tools), tt.wantTools)
-				}
-				if assistant.Config.MaxTokens != tt.wantMaxTokens {
-					t.Errorf("MaxTokens = %v, want %v", assistant.Config.MaxTokens, tt.wantMaxTokens)
-				}
-			}
-		})
-	}
+func (m *mockProvider) Close() error {
+	return nil
 }
 
 func TestAssistantManager(t *testing.T) {
 	// Create temporary test directory
 	tempDir := t.TempDir()
-	assistantDir := filepath.Join(tempDir, "assistants", "test-assistant")
+	assistantDir := filepath.Join(tempDir, "test-assistant")
 	err := os.MkdirAll(assistantDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
+	}
+
+	// Create tools directory
+	toolsDir := filepath.Join(tempDir, "tools")
+	err = os.MkdirAll(toolsDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create tools directory: %v", err)
 	}
 
 	// Create test prompt.md
@@ -99,6 +57,8 @@ func TestAssistantManager(t *testing.T) {
 name: test-assistant
 description: A test assistant
 model: gpt-4
+tools:
+  - summarize
 ---
 Test prompt content
 `
@@ -107,81 +67,116 @@ Test prompt content
 		t.Fatalf("Failed to create test prompt.md: %v", err)
 	}
 
-	// Create test knowledge directory
-	knowledgeDir := filepath.Join(assistantDir, "knowledge")
-	err = os.MkdirAll(knowledgeDir, 0755)
+	// Create test tool
+	toolDir := filepath.Join(toolsDir, "summarize")
+	err = os.MkdirAll(toolDir, 0755)
 	if err != nil {
-		t.Fatalf("Failed to create knowledge directory: %v", err)
+		t.Fatalf("Failed to create tool directory: %v", err)
 	}
 
-	// Create test knowledge file
-	err = os.WriteFile(filepath.Join(knowledgeDir, "test.txt"), []byte("Test knowledge content"), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test knowledge file: %v", err)
+	// Create mock tool source
+	mainGo := `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--usage" {
+		fmt.Print(` + "`" + `{"schema":{"name":"summarize","description":"Summarizes text","parameters":{"type":"object","properties":{"content":{"type":"string","description":"Text to summarize"}},"required":["content"]}},"env":{}}` + "`" + `)
+		return
 	}
 
-	manager := NewManager(tempDir)
+	if len(os.Args) > 1 && os.Args[1] == "--health" {
+		fmt.Print(` + "`" + `{"status":true,"details":"healthy"}` + "`" + `)
+		return
+	}
 
-	// Test loading assistant
-	assistant, err := manager.Load("test-assistant")
+	// Read input
+	input, _ := io.ReadAll(os.Stdin)
+	
+	// Parse input
+	var data struct {
+		Content string ` + "`json:\"content\"`" + `
+	}
+	json.Unmarshal(input, &data)
+
+	// Return mock result
+	fmt.Printf(` + "`" + `{"result":"Summary of: %s"}` + "`" + `, data.Content)
+}`
+
+	err = os.WriteFile(filepath.Join(toolDir, "main.go"), []byte(mainGo), 0644)
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("Failed to create test prompt.md: %v", err)
+	}
+
+	// Create mock provider
+	mockProvider := &mockProvider{
+		response: "Test response",
+	}
+
+	// Create tool manager
+	toolMgr := tool.NewManager(toolsDir)
+
+	// Create network policy for sandbox
+	networkPolicy := &sandbox.NetworkPolicy{
+		AllowOutbound: false,
+		AllowInbound:  false,
+	}
+
+	// Create manager with network policy
+	manager, err := NewManager(tempDir, toolMgr, mockProvider, networkPolicy)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	// Test getting assistant
+	assistant, err := manager.Get("test-assistant")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
 	}
 
 	if assistant.Name != "test-assistant" {
 		t.Errorf("Assistant name = %v, want test-assistant", assistant.Name)
 	}
 
-	// Test loading knowledge
-	knowledge, err := manager.LoadKnowledge("test-assistant")
+	if len(assistant.Tools) != 1 || assistant.Tools[0] != "summarize" {
+		t.Errorf("Assistant tools = %v, want [summarize]", assistant.Tools)
+	}
+
+	// Test processing command
+	cmd := &parser.Command{
+		Assistant: "test-assistant",
+		Text:      "Test command",
+	}
+
+	response, err := assistant.Process(cmd)
 	if err != nil {
-		t.Fatalf("LoadKnowledge() error = %v", err)
+		t.Fatalf("Process() error = %v", err)
 	}
 
-	if len(knowledge) != 1 {
-		t.Errorf("Knowledge files = %v, want 1", len(knowledge))
+	if response != "Test response" {
+		t.Errorf("Process() response = %v, want 'Test response'", response)
 	}
 
-	if content := string(knowledge["test.txt"]); content != "Test knowledge content" {
-		t.Errorf("Knowledge content = %v, want 'Test knowledge content'", content)
+	// Test tool usage
+	cmd = &parser.Command{
+		Assistant: "test-assistant",
+		Text:      "use summarize Test input",
 	}
 
-	// Test getting cached assistant
-	cachedAssistant, err := manager.GetAssistant("test-assistant")
+	// Mock provider response for tool usage
+	mockProvider.response = "Summary: Test input summarized"
+
+	response, err = assistant.Process(cmd)
 	if err != nil {
-		t.Fatalf("GetAssistant() error = %v", err)
+		t.Fatalf("Process() with tool error = %v", err)
 	}
 
-	if cachedAssistant != assistant {
-		t.Error("GetAssistant() returned different instance than Load()")
-	}
-}
-
-func TestConfigMerging(t *testing.T) {
-	assistant := &Assistant{
-		Config: Config{
-			MaxTokens: 500,
-			// Temperature and TopP not set
-		},
-	}
-
-	globalConfig := Config{
-		MaxTokens:   1000,
-		Temperature: 0.7,
-		TopP:        0.9,
-	}
-
-	merged := assistant.MergeConfig(globalConfig)
-
-	if merged.MaxTokens != 500 {
-		t.Errorf("MaxTokens = %v, want 500 (assistant value should override)", merged.MaxTokens)
-	}
-
-	if merged.Temperature != 0.7 {
-		t.Errorf("Temperature = %v, want 0.7 (should use global default)", merged.Temperature)
-	}
-
-	if merged.TopP != 0.9 {
-		t.Errorf("TopP = %v, want 0.9 (should use global default)", merged.TopP)
+	if response != "Summary: Test input summarized" {
+		t.Errorf("Process() with tool response = %v, want 'Summary: Test input summarized'", response)
 	}
 }

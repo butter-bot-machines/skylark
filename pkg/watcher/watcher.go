@@ -8,6 +8,7 @@ import (
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/job"
+	"github.com/butter-bot-machines/skylark/pkg/processor"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -16,12 +17,15 @@ type Watcher struct {
 	fsWatcher *fsnotify.Watcher
 	jobQueue  chan<- job.Job
 	debouncer *Debouncer
+	processor *processor.Processor
 	done      chan struct{}
 	wg        sync.WaitGroup
+	stopped   bool
+	mu        sync.Mutex
 }
 
 // New creates a new file watcher
-func New(cfg *config.Config, jobQueue chan<- job.Job) (*Watcher, error) {
+func New(cfg *config.Config, jobQueue chan<- job.Job, proc *processor.Processor) (*Watcher, error) {
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
@@ -30,6 +34,7 @@ func New(cfg *config.Config, jobQueue chan<- job.Job) (*Watcher, error) {
 	w := &Watcher{
 		fsWatcher: fsWatcher,
 		jobQueue:  jobQueue,
+		processor: proc,
 		debouncer: newDebouncer(cfg.FileWatch.DebounceDelay, cfg.FileWatch.MaxDelay),
 		done:      make(chan struct{}),
 	}
@@ -54,8 +59,17 @@ func New(cfg *config.Config, jobQueue chan<- job.Job) (*Watcher, error) {
 
 // Stop stops the watcher
 func (w *Watcher) Stop() error {
+	w.mu.Lock()
+	if w.stopped {
+		w.mu.Unlock()
+		return nil
+	}
+	w.stopped = true
 	close(w.done)
+	w.mu.Unlock()
+
 	w.wg.Wait()
+	w.debouncer.Stop()
 	return w.fsWatcher.Close()
 }
 
@@ -88,38 +102,9 @@ func (w *Watcher) watch() {
 }
 
 func (w *Watcher) handleEvent(event fsnotify.Event) {
-	// Create job from event
-	job := &FileJob{
-		Path: event.Name,
-		Type: event.Op.String(),
-	}
+	// Create job from event using NewFileChangeJob
+	j := job.NewFileChangeJob(event.Name, w.processor)
 
 	// Send to job queue
-	w.jobQueue <- job
-}
-
-// FileJob represents a file processing job
-type FileJob struct {
-	Path string
-	Type string
-}
-
-// Process processes the file job
-func (j *FileJob) Process() error {
-	// TODO: Implement file processing
-	return nil
-}
-
-// OnFailure handles job failure
-func (j *FileJob) OnFailure(err error) {
-	slog.Error("File job failed",
-		"path", j.Path,
-		"type", j.Type,
-		"error", err,
-	)
-}
-
-// MaxRetries returns the maximum number of retries
-func (j *FileJob) MaxRetries() int {
-	return 3
+	w.jobQueue <- j
 }

@@ -10,10 +10,19 @@ The foundation of Skylark centers on file monitoring and command processing. Thi
 
 - Initialize Go module with dependency management
 - Set up project structure following Go standards
-- Establish testing framework (stdlib)
-  - Test fixtures for markdown files
-  - Mock interfaces for AI providers
-  - Integration test helpers
+- Establish testing framework (stdlib):
+  - Test fixtures for markdown files:
+    * Command parsing tests (assistant names, context)
+    * Reference resolution tests (block types, matching)
+    * Integration test scenarios
+  - Test structure:
+    * Unit tests in *_test.go files
+    * Test data in testdata/ directory
+    * Shared test helpers
+  - Success criteria:
+    * All test cases pass
+    * Coverage meets targets
+    * Edge cases handled
 
 ### 1.2 File Watcher System
 - Implement basic file system monitoring
@@ -49,12 +58,21 @@ The foundation of Skylark centers on file monitoring and command processing. Thi
   - Reference: `#\s*([^#\n]+?)(?:\s*#|$)`
 - Implement assistant name resolution:
   - Case-insensitive matching
-  - Kebab-case normalization
+  - Simple lowercase normalization (preserve format)
   - Default assistant fallback
 - Add content reference parsing:
-  - Header matching with exact punctuation
-  - Section content extraction
-  - Nested header handling
+  - Flexible header matching:
+    * Partial matches allowed
+    * Case/whitespace/punctuation insensitive
+    * Multiple matches supported
+  - Block type handling:
+    * Headers with hierarchy
+    * Lists as individual items
+    * Complete paragraphs/quotes/tables/code
+  - Context rules:
+    * Current section content
+    * Parent header hierarchy
+    * Sibling section content
 
 - Create context extraction system:
   * Section boundary detection algorithm:

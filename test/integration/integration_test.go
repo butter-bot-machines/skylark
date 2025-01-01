@@ -9,6 +9,7 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/watcher"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	"github.com/butter-bot-machines/skylark/test/testutil"
 )
 
 // TestWatcherWorkerIntegration tests the integration between file watcher and worker pool
@@ -98,8 +99,14 @@ func TestWatcherWorkerIntegration(t *testing.T) {
 	pool := worker.NewPool(cfg)
 	defer pool.Stop()
 
+	// Create mock processor
+	proc, err := testutil.NewMockProcessor()
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+
 	// Create and start file watcher
-	w, err := watcher.New(cfg, pool.Queue())
+	w, err := watcher.New(cfg, pool.Queue(), proc)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}

@@ -1,0 +1,36 @@
+{
+  "finish_reason": "tool_calls",
+  "choices": [
+    {
+      "message": {
+        "role": "assistant",
+        "content": "Using tool",
+        "tool_calls": [
+          {
+            "id": "call_123",
+            "type": "function",
+            "function": {
+              "name": "test_tool",
+              "arguments": "{\"input\":\"test\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4625,
+    "completion_tokens": 2551,
+    "total_tokens": 7176,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 1024,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  }
+}

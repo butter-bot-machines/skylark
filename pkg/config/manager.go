@@ -37,6 +37,9 @@ func (m *Manager) Load() error {
 		return fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Set runtime config values
+	config.Environment.ConfigDir = filepath.Dir(m.path)
+
 	m.config = config
 	return nil
 }
@@ -81,22 +84,27 @@ func (m *Manager) GetEnvironment() EnvironmentConfig {
 	return m.Get().GetEnvironment()
 }
 
-// GetModelConfig returns the model configuration
-func (m *Manager) GetModelConfig() ModelConfig {
-	return m.Get().GetModelConfig()
+// GetModelConfig returns the model configuration for a provider and model
+func (m *Manager) GetModelConfig(provider, model string) (ModelConfig, bool) {
+	return m.Get().GetModelConfig(provider, model)
 }
 
-// GetToolConfig returns the tool configuration
-func (m *Manager) GetToolConfig() ToolConfig {
-	return m.Get().GetToolConfig()
+// GetToolConfig returns the tool configuration for a tool name
+func (m *Manager) GetToolConfig(name string) (ToolConfig, bool) {
+	return m.Get().GetToolConfig(name)
 }
 
-// GetAssistantConfig returns the configuration for a specific assistant
-func (m *Manager) GetAssistantConfig(name string) (Assistant, bool) {
-	return m.Get().GetAssistantConfig(name)
+// GetToolEnv returns the environment variables for a tool
+func (m *Manager) GetToolEnv(name string) map[string]string {
+	return m.Get().GetToolEnv(name)
 }
 
-// GetDefaultAssistant returns the default assistant configuration
-func (m *Manager) GetDefaultAssistant() (Assistant, bool) {
-	return m.Get().GetDefaultAssistant()
+// GetSecurityConfig returns the security configuration
+func (m *Manager) GetSecurityConfig() SecurityConfig {
+	return m.Get().GetSecurityConfig()
+}
+
+// Validate validates the current configuration
+func (m *Manager) Validate() error {
+	return m.Get().Validate()
 }

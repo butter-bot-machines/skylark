@@ -63,9 +63,47 @@ func TestCLIInit(t *testing.T) {
 		check     func(t *testing.T, projectDir string)
 	}{
 		{
-			name:      "no project name",
+			name:      "current directory",
 			args:      []string{},
-			wantError: true,
+			wantError: false,
+			check: func(t *testing.T, projectDir string) {
+				// Check directory structure
+				dirs := []string{
+					".skai",
+					".skai/assistants",
+					".skai/assistants/default",
+					".skai/assistants/default/knowledge",
+					".skai/tools",
+				}
+				for _, dir := range dirs {
+					path := filepath.Join(projectDir, dir)
+					if _, err := os.Stat(path); os.IsNotExist(err) {
+						t.Errorf("Directory %s not created", path)
+					}
+				}
+
+				// Check config.yaml
+				configPath := filepath.Join(projectDir, ".skai", "config.yaml")
+				content, err := os.ReadFile(configPath)
+				if err != nil {
+					t.Errorf("Failed to read config.yaml: %v", err)
+					return
+				}
+				if !strings.Contains(string(content), "version: \"1.0\"") {
+					t.Error("config.yaml missing version")
+				}
+
+				// Check prompt.md
+				promptPath := filepath.Join(projectDir, ".skai", "assistants", "default", "prompt.md")
+				content, err = os.ReadFile(promptPath)
+				if err != nil {
+					t.Errorf("Failed to read prompt.md: %v", err)
+					return
+				}
+				if !strings.Contains(string(content), "name: default") {
+					t.Error("prompt.md missing name")
+				}
+			},
 		},
 		{
 			name:      "valid project name",
@@ -121,7 +159,11 @@ func TestCLIInit(t *testing.T) {
 			}
 
 			if !tt.wantError && tt.check != nil {
-				tt.check(t, filepath.Join(tempDir, tt.args[0]))
+				projectDir := tempDir
+				if len(tt.args) > 0 {
+					projectDir = filepath.Join(tempDir, tt.args[0])
+				}
+				tt.check(t, projectDir)
 			}
 		})
 	}
@@ -209,22 +251,28 @@ func TestLoadConfig(t *testing.T) {
 environment:
   log_level: debug
   log_file: app.log
-model:
-  provider: openai
-  name: gpt-4
-  parameters:
-    max_tokens: 2048
-    temperature: 0.7
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
-  frequency_penalty: 0.0
-  presence_penalty: 0.0
+models:
+  openai:
+    gpt-4:
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.7
+      max_tokens: 2000
+      top_p: 0.9
+      frequency_penalty: 0.0
+      presence_penalty: 0.0
+    gpt-3.5-turbo:
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.5
+      max_tokens: 1000
+      top_p: 0.9
 tools:
-  path: /usr/local/bin
-  parameters:
-    key1: value1
-    key2: value2
+  summarize:
+    env:
+      MAX_LENGTH: "1000"
+      TIMEOUT: "30s"
+  web_search:
+    env:
+      TIMEOUT: "30s"
 assistants:
   default:
     name: Default Assistant

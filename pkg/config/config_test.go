@@ -12,26 +12,29 @@ func TestConfigLoading(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	configData := []byte(`
+version: "1.0"
 environment:
   log_level: debug
   log_file: app.log
-model:
-  provider: openai
-  name: gpt-4
-  parameters:
-    max_tokens: 2048
-    temperature: 0.7
+models:
+  openai:
+    gpt-4:
+      api_key: sk-test-key
+      temperature: 0.7
+      max_tokens: 2048
+    gpt-3.5-turbo:
+      api_key: sk-test-key-2
+      temperature: 0.5
+      max_tokens: 1000
 tools:
-  path: /usr/local/bin
-  parameters:
-    key1: value1
-    key2: value2
-assistants:
-  default:
-    name: Default Assistant
-    model: gpt-4
-    description: Default testing assistant
-default_assistant: default
+  summarize:
+    env:
+      API_KEY: sum-test-key
+      MAX_LENGTH: "100"
+  web_search:
+    env:
+      API_KEY: search-test-key
+      TIMEOUT: "30s"
 workers:
   count: 4
   queue_size: 100
@@ -68,33 +71,38 @@ file_watch:
 	}
 
 	// Test model config
-	model := manager.GetModelConfig()
-	if model.Provider != "openai" {
-		t.Errorf("Expected provider 'openai', got '%s'", model.Provider)
+	model, ok := manager.GetModelConfig("openai", "gpt-4")
+	if !ok {
+		t.Fatal("Failed to get model config")
 	}
-	if model.Name != "gpt-4" {
-		t.Errorf("Expected model 'gpt-4', got '%s'", model.Name)
+	if model.APIKey != "sk-test-key" {
+		t.Errorf("Expected API key 'sk-test-key', got '%s'", model.APIKey)
+	}
+	if model.Temperature != 0.7 {
+		t.Errorf("Expected temperature 0.7, got %f", model.Temperature)
+	}
+	if model.MaxTokens != 2048 {
+		t.Errorf("Expected max tokens 2048, got %d", model.MaxTokens)
 	}
 
 	// Test tool config
-	tools := manager.GetToolConfig()
-	if tools.Path != "/usr/local/bin" {
-		t.Errorf("Expected path '/usr/local/bin', got '%s'", tools.Path)
+	tool, ok := manager.GetToolConfig("summarize")
+	if !ok {
+		t.Fatal("Failed to get tool config")
 	}
-	if tools.Parameters["key1"] != "value1" {
-		t.Errorf("Expected parameter key1='value1', got '%s'", tools.Parameters["key1"])
+	if tool.Env["API_KEY"] != "sum-test-key" {
+		t.Errorf("Expected API key 'sum-test-key', got '%s'", tool.Env["API_KEY"])
 	}
-	if tools.Parameters["key2"] != "value2" {
-		t.Errorf("Expected parameter key2='value2', got '%s'", tools.Parameters["key2"])
+	if tool.Env["MAX_LENGTH"] != "100" {
+		t.Errorf("Expected MAX_LENGTH '100', got '%s'", tool.Env["MAX_LENGTH"])
 	}
 
-	// Test assistant config
-	assistant, ok := manager.GetAssistantConfig("default")
-	if !ok {
-		t.Error("Failed to get default assistant config")
+	// Test worker config
+	if manager.Get().Workers.Count != 4 {
+		t.Errorf("Expected worker count 4, got %d", manager.Get().Workers.Count)
 	}
-	if assistant.Name != "Default Assistant" {
-		t.Errorf("Expected assistant name 'Default Assistant', got '%s'", assistant.Name)
+	if manager.Get().Workers.QueueSize != 100 {
+		t.Errorf("Expected queue size 100, got %d", manager.Get().Workers.QueueSize)
 	}
 }
 
@@ -104,13 +112,26 @@ func TestConfigSaving(t *testing.T) {
 
 	// Create a config
 	config := &Config{
+		Version: "1.0",
 		Environment: EnvironmentConfig{
 			LogLevel: "info",
 			LogFile:  "test.log",
 		},
-		Model: ModelConfig{
-			Provider: "test-provider",
-			Name:     "test-model",
+		Models: map[string]map[string]ModelConfig{
+			"openai": {
+				"gpt-4": {
+					APIKey:      "sk-test",
+					Temperature: 0.7,
+					MaxTokens:   2048,
+				},
+			},
+		},
+		Tools: map[string]ToolConfig{
+			"summarize": {
+				Env: map[string]string{
+					"API_KEY": "test-key",
+				},
+			},
 		},
 	}
 
@@ -131,108 +152,82 @@ func TestConfigSaving(t *testing.T) {
 
 	// Verify loaded config matches original
 	loadedConfig := newManager.Get()
-	if loadedConfig.Environment.LogLevel != config.Environment.LogLevel {
-		t.Errorf("Expected log level '%s', got '%s'", config.Environment.LogLevel, loadedConfig.Environment.LogLevel)
-	}
-	if loadedConfig.Model.Provider != config.Model.Provider {
-		t.Errorf("Expected provider '%s', got '%s'", config.Model.Provider, loadedConfig.Model.Provider)
-	}
-}
-
-func TestDefaultConfig(t *testing.T) {
-	// Create a temporary directory
-	tmpDir := t.TempDir()
-
-	// Create manager with default config
-	manager := NewManager(tmpDir)
-	config := manager.Get()
-
-	// Verify default values
-	if config.Workers.Count != 0 {
-		t.Errorf("Expected default worker count 0, got %d", config.Workers.Count)
-	}
-	if config.Workers.QueueSize != 0 {
-		t.Errorf("Expected default queue size 0, got %d", config.Workers.QueueSize)
-	}
-}
-
-func TestToolConfig(t *testing.T) {
-	// Create a temporary config file
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	configData := []byte(`
-tools:
-  path: /custom/path
-  parameters:
-    api_key: test-key
-    endpoint: test-endpoint
-    timeout: "30s"
-`)
-
-	err := os.WriteFile(configPath, configData, 0644)
-	if err != nil {
-		t.Fatalf("Failed to write test config: %v", err)
+	if loadedConfig.Version != config.Version {
+		t.Errorf("Expected version '%s', got '%s'", config.Version, loadedConfig.Version)
 	}
 
-	// Load and verify tool config
-	manager := NewManager(tmpDir)
-	err = manager.Load()
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	toolConfig := manager.GetToolConfig()
-	if toolConfig.Path != "/custom/path" {
-		t.Errorf("Expected tool path '/custom/path', got '%s'", toolConfig.Path)
-	}
-	if toolConfig.Parameters["api_key"] != "test-key" {
-		t.Errorf("Expected parameter api_key='test-key', got '%s'", toolConfig.Parameters["api_key"])
-	}
-	if toolConfig.Parameters["endpoint"] != "test-endpoint" {
-		t.Errorf("Expected parameter endpoint='test-endpoint', got '%s'", toolConfig.Parameters["endpoint"])
-	}
-}
-
-func TestAssistantConfig(t *testing.T) {
-	// Create a temporary config file
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-
-	configData := []byte(`
-assistants:
-  test:
-    name: Test Assistant
-    model: gpt-4
-    description: Test assistant
-default_assistant: test
-`)
-
-	err := os.WriteFile(configPath, configData, 0644)
-	if err != nil {
-		t.Fatalf("Failed to write test config: %v", err)
-	}
-
-	// Load and verify assistant config
-	manager := NewManager(tmpDir)
-	err = manager.Load()
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
-	}
-
-	defaultAssistant, ok := manager.GetDefaultAssistant()
+	// Check model config
+	model, ok := loadedConfig.Models["openai"]["gpt-4"]
 	if !ok {
-		t.Error("Failed to get default assistant")
+		t.Fatal("Failed to get model config")
 	}
-	if defaultAssistant.Name != "Test Assistant" {
-		t.Errorf("Expected assistant name 'Test Assistant', got '%s'", defaultAssistant.Name)
+	if model.APIKey != "sk-test" {
+		t.Errorf("Expected API key 'sk-test', got '%s'", model.APIKey)
 	}
 
-	assistant, ok := manager.GetAssistantConfig("test")
+	// Check tool config
+	tool, ok := loadedConfig.Tools["summarize"]
 	if !ok {
-		t.Error("Failed to get test assistant")
+		t.Fatal("Failed to get tool config")
 	}
-	if assistant.Name != "Test Assistant" {
-		t.Errorf("Expected assistant name 'Test Assistant', got '%s'", assistant.Name)
+	if tool.Env["API_KEY"] != "test-key" {
+		t.Errorf("Expected API key 'test-key', got '%s'", tool.Env["API_KEY"])
+	}
+}
+
+func TestConfigValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  *Config
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			config: &Config{
+				Version: "1.0",
+				Models: map[string]map[string]ModelConfig{
+					"openai": {
+						"gpt-4": {
+							APIKey: "sk-test",
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing version",
+			config: &Config{
+				Models: map[string]map[string]ModelConfig{
+					"openai": {
+						"gpt-4": {
+							APIKey: "sk-test",
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing API key",
+			config: &Config{
+				Version: "1.0",
+				Models: map[string]map[string]ModelConfig{
+					"openai": {
+						"gpt-4": {},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Config.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }

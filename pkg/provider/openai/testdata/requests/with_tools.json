@@ -1,0 +1,28 @@
+{
+  "model": "gpt-4",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Test prompt"
+    }
+  ],
+  "temperature": 0.7,
+  "max_tokens": 100,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "test_tool",
+        "description": "A test tool",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

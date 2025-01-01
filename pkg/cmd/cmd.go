@@ -2,10 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/job"
+	"github.com/butter-bot-machines/skylark/pkg/logging"
+	"github.com/butter-bot-machines/skylark/pkg/processor"
+	"github.com/butter-bot-machines/skylark/pkg/watcher"
+	"github.com/butter-bot-machines/skylark/pkg/worker"
 )
 
 const Version = "0.1.0"
@@ -13,11 +21,14 @@ const Version = "0.1.0"
 // CLI represents the command-line interface
 type CLI struct {
 	config *config.Manager
+	logger *slog.Logger
 }
 
 // NewCLI creates a new CLI instance
 func NewCLI() *CLI {
-	return &CLI{}
+	return &CLI{
+		logger: logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
+	}
 }
 
 // Run executes the CLI with the given arguments
@@ -42,18 +53,24 @@ func (c *CLI) Run(args []string) error {
 
 // Init initializes a new Skylark project
 func (c *CLI) Init(args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("project name required")
-	}
-	projectName := args[0]
-
-	// Create project directory
-	if err := os.MkdirAll(projectName, 0755); err != nil {
-		return fmt.Errorf("failed to create project directory: %w", err)
+	var projectDir string
+	if len(args) > 0 {
+		// Create named project directory
+		projectDir = args[0]
+		if err := os.MkdirAll(projectDir, 0755); err != nil {
+			return fmt.Errorf("failed to create project directory: %w", err)
+		}
+	} else {
+		// Use current directory
+		var err error
+		projectDir = "."
+		if projectDir, err = filepath.Abs(projectDir); err != nil {
+			return fmt.Errorf("failed to resolve current directory: %w", err)
+		}
 	}
 
 	// Create .skai directory structure
-	skaiDir := filepath.Join(projectName, ".skai")
+	skaiDir := filepath.Join(projectDir, ".skai")
 	dirs := []string{
 		filepath.Join(skaiDir, "assistants", "default"),
 		filepath.Join(skaiDir, "assistants", "default", "knowledge"),
@@ -70,30 +87,43 @@ func (c *CLI) Init(args []string) error {
 	configContent := `version: "1.0"
 
 environment:
-  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  log_level: "info"
+  log_file: "skylark.log"
 
-model:
-  provider: "openai"
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
+models:
+  openai:
+    gpt-4:
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.7
+      max_tokens: 2000
+      top_p: 0.9
+    gpt-3.5-turbo:
+      api_key: "${OPENAI_API_KEY}"
+      temperature: 0.5
+      max_tokens: 1000
+      top_p: 0.9
 
 tools:
-  max_timeout: 30
-  environment:
-    DEFAULT_TIMEOUT: "30"
-  defaults:
-    retry_count: 3
-    retry_delay: 1000
+  summarize:
+    env:
+      MAX_LENGTH: "1000"
+      TIMEOUT: "30s"
+  web_search:
+    env:
+      TIMEOUT: "30s"
 
-assistants:
-  default: "default"
-  environment:
-    MODEL_VERSION: "latest"
-  parameters:
-    max_context_size: 4000
-    max_references: 10
+workers:
+  count: 4
+  queue_size: 100
+
+file_watch:
+  debounce_delay: "500ms"
+  max_delay: "2s"
+  extensions:
+    - ".md"
+
+watch_paths:
+  - "."
 `
 	if err := os.WriteFile(filepath.Join(skaiDir, "config.yaml"), []byte(configContent), 0644); err != nil {
 		return fmt.Errorf("failed to create config.yaml: %w", err)
@@ -117,19 +147,120 @@ When processing commands, you should:
 		return fmt.Errorf("failed to create prompt.md: %w", err)
 	}
 
-	fmt.Printf("Initialized Skylark project in %s\n", projectName)
+	fmt.Printf("Initialized Skylark project in %s\n", projectDir)
 	return nil
 }
 
 // Watch starts watching for file changes
 func (c *CLI) Watch(args []string) error {
+	// Parse timeout flag
+	var timeout time.Duration
+	if len(args) > 0 && args[0] == "--timeout" {
+		if len(args) < 2 {
+			return fmt.Errorf("--timeout requires a duration (e.g., 5s)")
+		}
+		var err error
+		timeout, err = time.ParseDuration(args[1])
+		if err != nil {
+			return fmt.Errorf("invalid timeout duration: %w", err)
+		}
+		args = args[2:]
+	}
+
 	// Load configuration
 	if err := c.loadConfig(); err != nil {
 		return err
 	}
 
-	// TODO: Implement file watching
-	return fmt.Errorf("watch command not implemented yet")
+	c.logger.Info("starting watch command",
+		"timeout", timeout)
+
+	// Create processor
+	proc, err := processor.New(c.config.Get())
+	if err != nil {
+		return fmt.Errorf("failed to create processor: %w", err)
+	}
+
+	// Create worker pool
+	cfg := c.config.Get()
+	c.logger.Debug("creating worker pool",
+		"worker_count", cfg.Workers.Count,
+		"queue_size", cfg.Workers.QueueSize)
+
+	pool := worker.NewPool(cfg)
+	defer pool.Stop()
+
+	// Create channels
+	jobQueue := make(chan job.Job, cfg.Workers.QueueSize)
+	done := make(chan struct{})
+	progressDone := make(chan struct{})
+	sigChan := make(chan os.Signal, 1)
+
+	// Start components
+	c.logger.Debug("creating file watcher")
+	watcher, err := watcher.New(cfg, jobQueue, proc)
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	// Start worker pool consumer
+	go func() {
+		defer close(done)
+		for j := range jobQueue {
+			pool.Queue() <- j
+		}
+	}()
+
+	// Start progress monitoring
+	go c.monitorProgress(pool, progressDone)
+
+	// Show initial message
+	fmt.Println("Watching for changes...")
+
+	// Wait for interrupt or timeout
+	signal.Notify(sigChan, os.Interrupt)
+
+	if timeout > 0 {
+		// Use timeout if specified
+		select {
+		case <-sigChan:
+			c.logger.Info("received interrupt")
+		case <-time.After(timeout):
+			c.logger.Info("timeout reached", "duration", timeout)
+		}
+	} else {
+		// Wait indefinitely
+		<-sigChan
+		c.logger.Info("received interrupt")
+	}
+
+	// Cleanup in reverse order of creation
+	c.logger.Info("shutting down")
+
+	// 1. Stop accepting new events
+	watcher.Stop()
+	c.logger.Debug("stopped file watcher")
+
+	// 2. Stop accepting new jobs
+	close(jobQueue)
+	c.logger.Debug("closed job queue")
+
+	// 3. Wait for worker to finish
+	<-done
+	c.logger.Debug("worker pool drained")
+
+	// 4. Stop progress monitoring
+	close(progressDone)
+	c.logger.Debug("stopped progress monitoring")
+
+	// Final stats
+	stats := pool.Stats()
+	c.logger.Info("final status",
+		"processed", stats.ProcessedJobs,
+		"failed", stats.FailedJobs,
+		"queued", stats.QueuedJobs)
+
+	return nil
 }
 
 // RunOnce processes files once without watching
@@ -139,8 +270,103 @@ func (c *CLI) RunOnce(args []string) error {
 		return err
 	}
 
-	// TODO: Implement one-time processing
-	return fmt.Errorf("run command not implemented yet")
+	c.logger.Info("starting run command")
+
+	// Create processor
+	proc, err := processor.New(c.config.Get())
+	if err != nil {
+		return fmt.Errorf("failed to create processor: %w", err)
+	}
+
+	// Create worker pool
+	cfg := c.config.Get()
+	c.logger.Debug("creating worker pool",
+		"worker_count", cfg.Workers.Count,
+		"queue_size", cfg.Workers.QueueSize)
+
+	pool := worker.NewPool(cfg)
+	defer pool.Stop()
+
+	// Track progress
+	done := make(chan struct{})
+	go c.monitorProgress(pool, done)
+
+	// Queue files for processing
+	fileCount := 0
+	c.logger.Debug("scanning for markdown files")
+
+	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && filepath.Ext(path) == ".md" {
+			c.logger.Debug("queueing file", "path", path)
+			pool.Queue() <- job.NewFileChangeJob(path, proc)
+			fileCount++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	// Show initial count
+	c.logger.Info("starting processing",
+		"file_count", fileCount)
+	fmt.Printf("Processing %d files...\n", fileCount)
+
+	// Wait for all jobs to complete
+	for {
+		stats := pool.Stats()
+		if stats.ProcessedJobs+stats.FailedJobs == uint64(fileCount) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Signal progress monitor to stop
+	close(done)
+
+	// Get final status
+	stats := pool.Stats()
+	c.logger.Info("processing complete",
+		"processed", stats.ProcessedJobs,
+		"failed", stats.FailedJobs,
+		"total", fileCount)
+
+	if stats.FailedJobs > 0 {
+		return fmt.Errorf("%d/%d files failed processing", stats.FailedJobs, fileCount)
+	}
+
+	fmt.Printf("\nSuccessfully processed %d files\n", stats.ProcessedJobs)
+	return nil
+}
+
+// monitorProgress displays progress information
+func (c *CLI) monitorProgress(pool *worker.Pool, done chan struct{}) {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	lastStats := worker.Stats{}
+	for {
+		select {
+		case <-done:
+			return
+		case <-ticker.C:
+			stats := pool.Stats()
+			if stats != lastStats {
+				c.logger.Debug("progress update",
+					"processed", stats.ProcessedJobs,
+					"failed", stats.FailedJobs,
+					"queued", stats.QueuedJobs)
+				lastStats = stats
+			}
+			fmt.Printf("\rProcessed: %d, Failed: %d, Queued: %d",
+				stats.ProcessedJobs,
+				stats.FailedJobs,
+				stats.QueuedJobs)
+		}
+	}
 }
 
 // Version displays version information

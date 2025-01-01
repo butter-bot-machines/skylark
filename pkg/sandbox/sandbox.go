@@ -40,14 +40,14 @@ type NetworkPolicy struct {
 
 // Sandbox represents a sandboxed environment for tool execution
 type Sandbox struct {
-	WorkDir       string         // Working directory for the sandboxed process
-	Limits        ResourceLimits // Resource limits
-	Network       NetworkPolicy  // Network access policy
-	AllowedPaths  []string      // List of paths accessible to the sandboxed process
-	EnvWhitelist  []string      // List of allowed environment variables
-	ToolVersion   string        // Version of the tool being executed
-	CacheEnabled  bool          // Whether to cache results
-	cacheDir      string        // Directory for caching results
+	WorkDir      string         // Working directory for the sandboxed process
+	Limits       ResourceLimits // Resource limits
+	Network      NetworkPolicy  // Network access policy
+	AllowedPaths []string       // List of paths accessible to the sandboxed process
+	EnvWhitelist []string       // List of allowed environment variables
+	ToolVersion  string         // Version of the tool being executed
+	CacheEnabled bool           // Whether to cache results
+	cacheDir     string         // Directory for caching results
 }
 
 // NewSandbox creates a new sandbox with the specified configuration
@@ -86,25 +86,29 @@ func (s *Sandbox) Execute(cmd *exec.Cmd) error {
 		Setpgid: true,
 	}
 
-	// Set environment variables
+	// Keep existing environment (from tool)
+	toolEnv := cmd.Env
+	if toolEnv == nil {
+		toolEnv = make([]string, 0)
+	}
+
+	// Add filtered system environment
 	if len(s.EnvWhitelist) > 0 {
 		// Always include PATH and basic environment
 		basicEnv := []string{"PATH", "HOME", "USER", "SHELL"}
 		s.EnvWhitelist = append(s.EnvWhitelist, basicEnv...)
 
-		filteredEnv := make([]string, 0)
 		for _, env := range os.Environ() {
 			for _, allowed := range s.EnvWhitelist {
 				if strings.HasPrefix(env, allowed+"=") {
-					filteredEnv = append(filteredEnv, env)
+					toolEnv = append(toolEnv, env)
 					break
 				}
 			}
 		}
-		cmd.Env = filteredEnv
-	} else {
-		cmd.Env = os.Environ()
 	}
+
+	cmd.Env = toolEnv
 
 	// Start the command
 	if err := cmd.Start(); err != nil {

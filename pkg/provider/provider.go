@@ -10,9 +10,22 @@ type Provider interface {
 
 // Response represents a model's response
 type Response struct {
-	Content string
-	Usage   Usage
-	Error   error
+	Content   string
+	Usage     Usage
+	Error     error
+	ToolCalls []ToolCall
+}
+
+// ToolCall represents a request to execute a tool
+type ToolCall struct {
+	ID       string
+	Function Function
+}
+
+// Function represents a tool function to execute
+type Function struct {
+	Name      string
+	Arguments string
 }
 
 // Usage represents token usage information
@@ -34,10 +47,10 @@ func (e *Error) Error() string {
 
 // Common error codes
 const (
-	ErrRateLimit     = "rate_limit_exceeded"
-	ErrInvalidInput  = "invalid_input"
-	ErrServerError   = "server_error"
-	ErrTimeout       = "timeout"
+	ErrRateLimit      = "rate_limit_exceeded"
+	ErrInvalidInput   = "invalid_input"
+	ErrServerError    = "server_error"
+	ErrTimeout        = "timeout"
 	ErrAuthentication = "authentication_error"
 )
 
