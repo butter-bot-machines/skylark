@@ -32,7 +32,7 @@ go build ./cmd/skylark
 
 1. Initialize a new project:
 ```bash
-skylark init my-project
+skai init my-project
 ```
 
 2. Create a Markdown file (e.g., `notes.md`):
@@ -47,7 +47,7 @@ skylark init my-project
 
 3. Run Skylark:
 ```bash
-skylark watch
+skai watch
 ```
 
 ## Configuration
