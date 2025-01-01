@@ -20,17 +20,21 @@ type Tool struct {
 	Schema      Schema    `json:"schema"`
 }
 
-// Schema represents the tool's input/output schema
+// Schema represents the tool's schema and environment requirements
 type Schema struct {
-	Input struct {
-		Type       string                 `json:"type"`
-		Properties map[string]interface{} `json:"properties"`
-		Required   []string              `json:"required,omitempty"`
-	} `json:"input"`
-	Output struct {
-		Type       string                 `json:"type"`
-		Properties map[string]interface{} `json:"properties"`
-	} `json:"output"`
+	Schema struct {
+		Name        string                 `json:"name"`
+		Description string                 `json:"description"`
+		Parameters  map[string]interface{} `json:"parameters"`
+	} `json:"schema"`
+	Env map[string]EnvVar `json:"env"`
+}
+
+// EnvVar represents an environment variable requirement
+type EnvVar struct {
+	Type        string      `json:"type"`
+	Description string      `json:"description"`
+	Default     interface{} `json:"default,omitempty"`
 }
 
 // Manager handles tool compilation and execution
@@ -129,16 +133,35 @@ func (t *Tool) loadSchema() error {
 func (t *Tool) checkHealth() error {
 	binaryPath := filepath.Join(t.Path, t.Name)
 	cmd := exec.Command(binaryPath, "--health")
-	if err := cmd.Run(); err != nil {
+	output, err := cmd.Output()
+	if err != nil {
 		return fmt.Errorf("health check failed: %w", err)
+	}
+
+	var status struct {
+		Status  bool   `json:"status"`
+		Details string `json:"details"`
+	}
+	if err := json.Unmarshal(output, &status); err != nil {
+		return fmt.Errorf("invalid health check response: %w", err)
+	}
+
+	if !status.Status {
+		return fmt.Errorf("tool unhealthy: %s", status.Details)
 	}
 	return nil
 }
 
-// Execute runs the tool with the provided input
-func (t *Tool) Execute(input []byte) ([]byte, error) {
+// Execute runs the tool with the provided input and environment
+func (t *Tool) Execute(input []byte, env map[string]string) ([]byte, error) {
 	binaryPath := filepath.Join(t.Path, t.Name)
 	cmd := exec.Command(binaryPath)
+	
+	// Set up environment
+	cmd.Env = os.Environ() // Start with current environment
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
 
 	// Set up pipes
 	stdin, err := cmd.StdinPipe()
@@ -182,10 +205,24 @@ func (t *Tool) ValidateInput(input []byte) error {
 		return fmt.Errorf("invalid JSON input: %w", err)
 	}
 
-	// Check required fields
-	for _, field := range t.Schema.Input.Required {
-		if _, exists := data[field]; !exists {
-			return fmt.Errorf("missing required field: %s", field)
+	params := t.Schema.Schema.Parameters
+	if params["type"] != "object" {
+		return fmt.Errorf("invalid schema: root must be object type")
+	}
+
+	if _, ok := params["properties"].(map[string]interface{}); !ok {
+		return fmt.Errorf("invalid schema: missing properties")
+	}
+
+	if required, ok := params["required"].([]interface{}); ok {
+		for _, field := range required {
+			fieldName, ok := field.(string)
+			if !ok {
+				return fmt.Errorf("invalid required field type: %v", field)
+			}
+			if _, exists := data[fieldName]; !exists {
+				return fmt.Errorf("missing required field: %s", fieldName)
+			}
 		}
 	}
 

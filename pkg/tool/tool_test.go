@@ -43,21 +43,30 @@ func main() {
 
 	if *usage {
 		schema := ` + "`" + `{
-			"input": {
-				"type": "object",
-				"properties": {
-					"text": {
-						"type": "string"
-					}
-				},
-				"required": ["text"]
+			"schema": {
+				"name": "test-tool",
+				"description": "A test tool implementation",
+				"parameters": {
+					"type": "object",
+					"properties": {
+						"text": {
+							"type": "string",
+							"description": "Input text to process"
+						}
+					},
+					"required": ["text"]
+				}
 			},
-			"output": {
-				"type": "object",
-				"properties": {
-					"result": {
-						"type": "string"
-					}
+			"env": {
+				"API_KEY": {
+					"type": "string",
+					"description": "API key for external service",
+					"default": "test-key"
+				},
+				"TIMEOUT": {
+					"type": "integer",
+					"description": "Operation timeout in seconds",
+					"default": 30
 				}
 			}
 		}` + "`" + `
@@ -66,7 +75,12 @@ func main() {
 	}
 
 	if *health {
-		os.Exit(0)
+		status := map[string]interface{}{
+			"status": true,
+			"details": "All systems operational",
+		}
+		json.NewEncoder(os.Stdout).Encode(status)
+		return
 	}
 
 	// Read input
@@ -82,19 +96,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Process input
+	// Process input using environment
+	apiKey := os.Getenv("API_KEY")
 	output := Output{
-		Result: "Processed: " + input.Text,
+		Result: fmt.Sprintf("Processed with %s: %s", apiKey, input.Text),
 	}
 
 	// Write output
-	result, err := json.Marshal(output)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error encoding output: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(string(result))
+	json.NewEncoder(os.Stdout).Encode(output)
 }
 `
 
@@ -128,21 +137,37 @@ func TestToolManager(t *testing.T) {
 	}
 
 	// Test schema loading
-	if tool.Schema.Input.Type != "object" {
-		t.Errorf("Schema input type = %v, want object", tool.Schema.Input.Type)
+	params := tool.Schema.Schema.Parameters
+	if params["type"] != "object" {
+		t.Errorf("Schema type = %v, want object", params["type"])
 	}
 
-	if len(tool.Schema.Input.Required) != 1 || tool.Schema.Input.Required[0] != "text" {
-		t.Errorf("Schema required fields = %v, want [text]", tool.Schema.Input.Required)
+	required, ok := params["required"].([]interface{})
+	if !ok || len(required) != 1 || required[0] != "text" {
+		t.Errorf("Schema required fields = %v, want [text]", required)
 	}
 
-	// Test tool execution
+	// Test environment variables
+	if len(tool.Schema.Env) != 2 {
+		t.Errorf("Expected 2 environment variables, got %d", len(tool.Schema.Env))
+	}
+
+	apiKey, exists := tool.Schema.Env["API_KEY"]
+	if !exists || apiKey.Type != "string" || apiKey.Default != "test-key" {
+		t.Errorf("Invalid API_KEY environment spec: %+v", apiKey)
+	}
+
+	// Test tool execution with environment
 	input := map[string]string{
 		"text": "hello world",
 	}
 	inputJSON, _ := json.Marshal(input)
 
-	output, err := tool.Execute(inputJSON)
+	env := map[string]string{
+		"API_KEY": "test-execution-key",
+	}
+
+	output, err := tool.Execute(inputJSON, env)
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -153,7 +178,7 @@ func TestToolManager(t *testing.T) {
 		t.Fatalf("Failed to parse output: %v", err)
 	}
 
-	expectedResult := "Processed: hello world"
+	expectedResult := "Processed with test-execution-key: hello world"
 	if result["result"] != expectedResult {
 		t.Errorf("Execute() result = %v, want %v", result["result"], expectedResult)
 	}
