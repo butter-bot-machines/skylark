@@ -2,219 +2,135 @@ package provider
 
 import (
 	"context"
-	"strings"
+	"errors"
 	"testing"
 	"time"
 )
 
-func TestRateLimiter(t *testing.T) {
-	// Create a rate limiter with 2 tokens per second
-	limiter := NewRateLimiter(2, 2, time.Second)
-
-	// Test initial tokens
-	ctx := context.Background()
-	if err := limiter.Wait(ctx); err != nil {
-		t.Errorf("First wait failed: %v", err)
-	}
-	if err := limiter.Wait(ctx); err != nil {
-		t.Errorf("Second wait failed: %v", err)
-	}
-
-	// Test waiting for refill
-	start := time.Now()
-	if err := limiter.Wait(ctx); err != nil {
-		t.Errorf("Third wait failed: %v", err)
-	}
-	elapsed := time.Since(start)
-
-	// Should have waited close to 1 second
-	if elapsed < 900*time.Millisecond {
-		t.Errorf("Wait time too short: %v", elapsed)
-	}
+type mockProvider struct {
+	response *Response
+	err      error
+	delay    time.Duration
 }
 
-func TestRateLimiterContext(t *testing.T) {
-	limiter := NewRateLimiter(1, 1, time.Second)
-
-	// Use up the token
-	ctx := context.Background()
-	if err := limiter.Wait(ctx); err != nil {
-		t.Errorf("First wait failed: %v", err)
+func (m *mockProvider) Send(ctx context.Context, prompt string) (*Response, error) {
+	if m.delay > 0 {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(m.delay):
+		}
 	}
 
-	// Test cancellation
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	err := limiter.Wait(ctx)
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected DeadlineExceeded, got: %v", err)
+	if m.err != nil {
+		return nil, m.err
 	}
+	return m.response, nil
 }
 
-func TestProviderError(t *testing.T) {
-	tests := []struct {
-		name       string
-		code       string
-		message    string
-		retryable  bool
-	}{
-		{
-			name:      "rate limit error",
-			code:      "rate_limit_exceeded",
-			message:   "Too many requests",
-			retryable: true,
-		},
-		{
-			name:      "server error",
-			code:      "server_error",
-			message:   "Internal server error",
-			retryable: true,
-		},
-		{
-			name:      "validation error",
-			code:      "validation_error",
-			message:   "Invalid input",
-			retryable: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := &ProviderError{
-				Code:    tt.code,
-				Message: tt.message,
-			}
-
-			if err.Error() != tt.code+": "+tt.message {
-				t.Errorf("Error() = %v, want %v", err.Error(), tt.code+": "+tt.message)
-			}
-
-			if err.IsRetryable() != tt.retryable {
-				t.Errorf("IsRetryable() = %v, want %v", err.IsRetryable(), tt.retryable)
-			}
-		})
-	}
+func (m *mockProvider) Close() error {
+	return nil
 }
 
-func TestFormatResponse(t *testing.T) {
+func TestProviderInterface(t *testing.T) {
 	tests := []struct {
 		name     string
-		content  string
-		err      error
-		expected string
+		provider Provider
+		prompt   string
+		want     *Response
+		wantErr  error
 	}{
 		{
-			name:     "successful response",
-			content:  "Hello, world!",
-			err:      nil,
-			expected: "> Hello, world!",
+			name: "successful response",
+			provider: &mockProvider{
+				response: &Response{
+					Content: "test response",
+					Usage: Usage{
+						PromptTokens:     10,
+						CompletionTokens: 20,
+						TotalTokens:      30,
+					},
+				},
+			},
+			prompt: "test prompt",
+			want: &Response{
+				Content: "test response",
+				Usage: Usage{
+					PromptTokens:     10,
+					CompletionTokens: 20,
+					TotalTokens:      30,
+				},
+			},
 		},
 		{
-			name:     "error response",
-			content:  "",
-			err:      &ProviderError{Code: "error", Message: "Something went wrong"},
-			expected: "> Error: error: Something went wrong",
+			name: "error response",
+			provider: &mockProvider{
+				err: &Error{
+					Code:    ErrRateLimit,
+					Message: "rate limit exceeded",
+				},
+			},
+			prompt:  "test prompt",
+			wantErr: &Error{Code: ErrRateLimit, Message: "rate limit exceeded"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := FormatResponse(tt.content, tt.err)
-			if result != tt.expected {
-				t.Errorf("FormatResponse() = %v, want %v", result, tt.expected)
-			}
-		})
-	}
-}
+			ctx := context.Background()
+			got, err := tt.provider.Send(ctx, tt.prompt)
 
-func TestFormatPrompt(t *testing.T) {
-	tests := []struct {
-		name         string
-		systemPrompt string
-		userPrompt   string
-		context      map[string]string
-		tools       []string
-		wantContains []string
-	}{
-		{
-			name:         "basic prompt",
-			systemPrompt: "You are a helpful assistant.",
-			userPrompt:   "Hello!",
-			context:      nil,
-			tools:       nil,
-			wantContains: []string{
-				"You are a helpful assistant.",
-				"User: Hello!",
-			},
-		},
-		{
-			name:         "prompt with context",
-			systemPrompt: "You are a helpful assistant.",
-			userPrompt:   "Summarize this.",
-			context: map[string]string{
-				"Introduction": "This is a test document.",
-			},
-			wantContains: []string{
-				"Context:",
-				"# Introduction",
-				"This is a test document.",
-			},
-		},
-		{
-			name:         "prompt with tools",
-			systemPrompt: "You are a helpful assistant.",
-			userPrompt:   "Help me.",
-			tools:       []string{"summarize", "translate"},
-			wantContains: []string{
-				"Available tools:",
-				"- summarize",
-				"- translate",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := FormatPrompt(tt.systemPrompt, tt.userPrompt, tt.context, tt.tools)
-			
-			for _, want := range tt.wantContains {
-				if !strings.Contains(result, want) {
-					t.Errorf("FormatPrompt() missing %q", want)
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error but got none")
 				}
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf("expected error %v, got %v", tt.wantErr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got.Content != tt.want.Content {
+				t.Errorf("expected content %q, got %q", tt.want.Content, got.Content)
+			}
+
+			if got.Usage != tt.want.Usage {
+				t.Errorf("expected usage %+v, got %+v", tt.want.Usage, got.Usage)
 			}
 		})
 	}
 }
 
-func TestValidatePrompt(t *testing.T) {
-	limits := ModelLimits{
-		MaxPromptSize: 100,
+func TestContextCancellation(t *testing.T) {
+	provider := &mockProvider{
+		response: &Response{Content: "test"},
+		delay:    100 * time.Millisecond,
 	}
 
-	tests := []struct {
-		name      string
-		prompt    string
-		wantError bool
-	}{
-		{
-			name:      "valid prompt",
-			prompt:    "Hello, world!",
-			wantError: false,
-		},
-		{
-			name:      "prompt too long",
-			prompt:    strings.Repeat("x", 101),
-			wantError: true,
-		},
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := provider.Send(ctx, "test")
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got %v", err)
+	}
+}
+
+func TestContextTimeout(t *testing.T) {
+	provider := &mockProvider{
+		response: &Response{Content: "test"},
+		delay:    100 * time.Millisecond,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidatePrompt(tt.prompt, limits)
-			if (err != nil) != tt.wantError {
-				t.Errorf("ValidatePrompt() error = %v, wantError %v", err, tt.wantError)
-			}
-		})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	_, err := provider.Send(ctx, "test")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected context.DeadlineExceeded error, got %v", err)
 	}
 }

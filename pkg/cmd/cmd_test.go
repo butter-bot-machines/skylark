@@ -206,14 +206,43 @@ func TestLoadConfig(t *testing.T) {
 
 	// Create config.yaml
 	configContent := `version: "1.0"
+environment:
+  log_level: debug
+  log_file: app.log
 model:
-  provider: "openai"
-  name: "gpt-4"
+  provider: openai
+  name: gpt-4
+  parameters:
+    max_tokens: 2048
+    temperature: 0.7
   max_tokens: 2000
   temperature: 0.7
   top_p: 0.9
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+tools:
+  path: /usr/local/bin
+  parameters:
+    key1: value1
+    key2: value2
 assistants:
-  default: "default"
+  default:
+    name: Default Assistant
+    model: gpt-4
+    description: Default testing assistant
+default_assistant: default
+workers:
+  count: 4
+  queue_size: 100
+watch_paths:
+  - /path/to/watch1
+  - /path/to/watch2
+file_watch:
+  debounce_delay: 100ms
+  max_delay: 1s
+  extensions:
+    - .md
+    - .txt
 `
 	if err := os.WriteFile(filepath.Join(skaiDir, "config.yaml"), []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to create config.yaml: %v", err)

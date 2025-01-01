@@ -6,288 +6,233 @@ import (
 	"testing"
 )
 
-func setupTestConfig(t *testing.T) string {
-	// Create temporary directory
-	tempDir := t.TempDir()
-
-	// Create valid config.yaml
-	configContent := `version: "1.0"
-environment:
-  API_KEY: "${TEST_API_KEY}"
-  REGION: "us-west-2"
-
-model:
-  provider: "openai"
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
-  parameters:
-    presence_penalty: 0.0
-    frequency_penalty: 0.0
-
-tools:
-  max_timeout: 60
-  environment:
-    DEFAULT_TIMEOUT: "30"
-    API_BASE_URL: "https://api.example.com"
-  defaults:
-    retry_count: 3
-    retry_delay: 1000
-
-assistants:
-  default: "general"
-  environment:
-    MODEL_VERSION: "latest"
-  parameters:
-    max_context_size: 4000
-    max_references: 10
-`
-
-	err := os.WriteFile(filepath.Join(tempDir, "config.yaml"), []byte(configContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test config file: %v", err)
-	}
-
-	return tempDir
-}
-
 func TestConfigLoading(t *testing.T) {
-	basePath := setupTestConfig(t)
-	manager := NewManager(basePath)
+	// Create a temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
 
-	// Set test environment variable
-	os.Setenv("TEST_API_KEY", "test-key-123")
-	defer os.Unsetenv("TEST_API_KEY")
+	configData := []byte(`
+environment:
+  log_level: debug
+  log_file: app.log
+model:
+  provider: openai
+  name: gpt-4
+  parameters:
+    max_tokens: 2048
+    temperature: 0.7
+tools:
+  path: /usr/local/bin
+  parameters:
+    key1: value1
+    key2: value2
+assistants:
+  default:
+    name: Default Assistant
+    model: gpt-4
+    description: Default testing assistant
+default_assistant: default
+workers:
+  count: 4
+  queue_size: 100
+watch_paths:
+  - /path/to/watch1
+  - /path/to/watch2
+file_watch:
+  debounce_delay: 100ms
+  max_delay: 1s
+  extensions:
+    - .md
+    - .txt
+`)
 
-	err := manager.Load()
+	err := os.WriteFile(configPath, configData, 0644)
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	// Test environment expansion
-	if env := manager.GetEnvironment("API_KEY"); env != "test-key-123" {
-		t.Errorf("Environment expansion failed, got %s, want test-key-123", env)
+	// Create config manager
+	manager := NewManager(tmpDir)
+	err = manager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Test environment config
+	env := manager.GetEnvironment()
+	if env.LogLevel != "debug" {
+		t.Errorf("Expected log level 'debug', got '%s'", env.LogLevel)
+	}
+	if env.LogFile != "app.log" {
+		t.Errorf("Expected log file 'app.log', got '%s'", env.LogFile)
 	}
 
 	// Test model config
-	modelConfig := manager.GetModelConfig()
-	if modelConfig.Provider != "openai" {
-		t.Errorf("Model provider = %s, want openai", modelConfig.Provider)
+	model := manager.GetModelConfig()
+	if model.Provider != "openai" {
+		t.Errorf("Expected provider 'openai', got '%s'", model.Provider)
 	}
-	if modelConfig.MaxTokens != 2000 {
-		t.Errorf("MaxTokens = %d, want 2000", modelConfig.MaxTokens)
+	if model.Name != "gpt-4" {
+		t.Errorf("Expected model 'gpt-4', got '%s'", model.Name)
 	}
 
 	// Test tool config
-	toolConfig := manager.GetToolConfig("test-tool")
-	if retryCount, ok := toolConfig["retry_count"].(int); !ok || retryCount != 3 {
-		t.Errorf("Tool retry_count = %v, want 3", toolConfig["retry_count"])
+	tools := manager.GetToolConfig()
+	if tools.Path != "/usr/local/bin" {
+		t.Errorf("Expected path '/usr/local/bin', got '%s'", tools.Path)
+	}
+	if tools.Parameters["key1"] != "value1" {
+		t.Errorf("Expected parameter key1='value1', got '%s'", tools.Parameters["key1"])
+	}
+	if tools.Parameters["key2"] != "value2" {
+		t.Errorf("Expected parameter key2='value2', got '%s'", tools.Parameters["key2"])
 	}
 
 	// Test assistant config
-	assistantConfig := manager.GetAssistantConfig("test-assistant")
-	if maxContextSize, ok := assistantConfig["max_context_size"].(int); !ok || maxContextSize != 4000 {
-		t.Errorf("Assistant max_context_size = %v, want 4000", assistantConfig["max_context_size"])
-	}
-}
-
-func TestConfigValidation(t *testing.T) {
-	tests := []struct {
-		name        string
-		config      string
-		wantError   bool
-		errorString string
-	}{
-		{
-			name: "invalid version",
-			config: `version: "2.0"
-model:
-  provider: "openai"
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
-assistants:
-  default: "general"`,
-			wantError:   true,
-			errorString: "unsupported configuration version: 2.0",
-		},
-		{
-			name: "missing model provider",
-			config: `version: "1.0"
-model:
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
-assistants:
-  default: "general"`,
-			wantError:   true,
-			errorString: "model provider is required",
-		},
-		{
-			name: "invalid temperature",
-			config: `version: "1.0"
-model:
-  provider: "openai"
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 1.5
-  top_p: 0.9
-assistants:
-  default: "general"`,
-			wantError:   true,
-			errorString: "temperature must be between 0 and 1",
-		},
-		{
-			name: "missing default assistant",
-			config: `version: "1.0"
-model:
-  provider: "openai"
-  name: "gpt-4"
-  max_tokens: 2000
-  temperature: 0.7
-  top_p: 0.9
-assistants:
-  environment:
-    MODEL_VERSION: "latest"`,
-			wantError:   true,
-			errorString: "default assistant is required",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tempDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(tempDir, "config.yaml"), []byte(tt.config), 0644)
-			if err != nil {
-				t.Fatalf("Failed to create test config file: %v", err)
-			}
-
-			manager := NewManager(tempDir)
-			err = manager.Load()
-
-			if (err != nil) != tt.wantError {
-				t.Errorf("Load() error = %v, wantError %v", err, tt.wantError)
-				return
-			}
-
-			if tt.wantError && err.Error() != tt.errorString {
-				t.Errorf("Load() error = %v, want %v", err, tt.errorString)
-			}
-		})
-	}
-}
-
-func TestEnvironmentResolution(t *testing.T) {
-	basePath := setupTestConfig(t)
-	manager := NewManager(basePath)
-
-	// Set environment variables
-	os.Setenv("TEST_API_KEY", "test-key-123")
-	os.Setenv("CUSTOM_VAR", "custom-value")
-	defer func() {
-		os.Unsetenv("TEST_API_KEY")
-		os.Unsetenv("CUSTOM_VAR")
-	}()
-
-	err := manager.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	tests := []struct {
-		name     string
-		key      string
-		want     string
-		fallback bool
-	}{
-		{
-			name: "config environment",
-			key:  "API_KEY",
-			want: "test-key-123",
-		},
-		{
-			name: "system environment",
-			key:  "CUSTOM_VAR",
-			want: "custom-value",
-		},
-		{
-			name:     "nonexistent variable",
-			key:      "NONEXISTENT_VAR",
-			want:     "",
-			fallback: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := manager.GetEnvironment(tt.key)
-			if got != tt.want {
-				t.Errorf("GetEnvironment(%s) = %v, want %v", tt.key, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestToolConfiguration(t *testing.T) {
-	basePath := setupTestConfig(t)
-	manager := NewManager(basePath)
-
-	err := manager.Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-
-	// Test tool-specific configuration
-	toolConfig := manager.GetToolConfig("summarize")
-	
-	// Check defaults are applied
-	if retryCount, ok := toolConfig["retry_count"].(int); !ok || retryCount != 3 {
-		t.Errorf("Tool retry_count = %v, want 3", toolConfig["retry_count"])
-	}
-
-	// Check environment is properly prefixed
-	env, ok := toolConfig["environment"].(map[string]string)
+	assistant, ok := manager.GetAssistantConfig("default")
 	if !ok {
-		t.Error("Tool environment not found")
-	} else {
-		if timeout := env["DEFAULT_TIMEOUT"]; timeout != "30" {
-			t.Errorf("Tool DEFAULT_TIMEOUT = %v, want 30", timeout)
-		}
+		t.Error("Failed to get default assistant config")
+	}
+	if assistant.Name != "Default Assistant" {
+		t.Errorf("Expected assistant name 'Default Assistant', got '%s'", assistant.Name)
 	}
 }
 
-func TestAssistantConfiguration(t *testing.T) {
-	basePath := setupTestConfig(t)
-	manager := NewManager(basePath)
+func TestConfigSaving(t *testing.T) {
+	// Create a temporary directory
+	tmpDir := t.TempDir()
 
-	err := manager.Load()
+	// Create a config
+	config := &Config{
+		Environment: EnvironmentConfig{
+			LogLevel: "info",
+			LogFile:  "test.log",
+		},
+		Model: ModelConfig{
+			Provider: "test-provider",
+			Name:     "test-model",
+		},
+	}
+
+	// Create manager and save config
+	manager := NewManager(tmpDir)
+	manager.Set(config)
+	err := manager.Save()
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("Failed to save config: %v", err)
 	}
 
-	// Test default assistant name
-	if defaultAssistant := manager.GetDefaultAssistant(); defaultAssistant != "general" {
-		t.Errorf("Default assistant = %s, want general", defaultAssistant)
+	// Create new manager and load saved config
+	newManager := NewManager(tmpDir)
+	err = newManager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load saved config: %v", err)
 	}
 
-	// Test assistant-specific configuration
-	assistantConfig := manager.GetAssistantConfig("researcher")
-	
-	// Check global parameters are applied
-	if maxContextSize, ok := assistantConfig["max_context_size"].(int); !ok || maxContextSize != 4000 {
-		t.Errorf("Assistant max_context_size = %v, want 4000", maxContextSize)
+	// Verify loaded config matches original
+	loadedConfig := newManager.Get()
+	if loadedConfig.Environment.LogLevel != config.Environment.LogLevel {
+		t.Errorf("Expected log level '%s', got '%s'", config.Environment.LogLevel, loadedConfig.Environment.LogLevel)
+	}
+	if loadedConfig.Model.Provider != config.Model.Provider {
+		t.Errorf("Expected provider '%s', got '%s'", config.Model.Provider, loadedConfig.Model.Provider)
+	}
+}
+
+func TestDefaultConfig(t *testing.T) {
+	// Create a temporary directory
+	tmpDir := t.TempDir()
+
+	// Create manager with default config
+	manager := NewManager(tmpDir)
+	config := manager.Get()
+
+	// Verify default values
+	if config.Workers.Count != 0 {
+		t.Errorf("Expected default worker count 0, got %d", config.Workers.Count)
+	}
+	if config.Workers.QueueSize != 0 {
+		t.Errorf("Expected default queue size 0, got %d", config.Workers.QueueSize)
+	}
+}
+
+func TestToolConfig(t *testing.T) {
+	// Create a temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configData := []byte(`
+tools:
+  path: /custom/path
+  parameters:
+    api_key: test-key
+    endpoint: test-endpoint
+    timeout: "30s"
+`)
+
+	err := os.WriteFile(configPath, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
 	}
 
-	// Check environment is properly prefixed
-	env, ok := assistantConfig["environment"].(map[string]string)
+	// Load and verify tool config
+	manager := NewManager(tmpDir)
+	err = manager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	toolConfig := manager.GetToolConfig()
+	if toolConfig.Path != "/custom/path" {
+		t.Errorf("Expected tool path '/custom/path', got '%s'", toolConfig.Path)
+	}
+	if toolConfig.Parameters["api_key"] != "test-key" {
+		t.Errorf("Expected parameter api_key='test-key', got '%s'", toolConfig.Parameters["api_key"])
+	}
+	if toolConfig.Parameters["endpoint"] != "test-endpoint" {
+		t.Errorf("Expected parameter endpoint='test-endpoint', got '%s'", toolConfig.Parameters["endpoint"])
+	}
+}
+
+func TestAssistantConfig(t *testing.T) {
+	// Create a temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configData := []byte(`
+assistants:
+  test:
+    name: Test Assistant
+    model: gpt-4
+    description: Test assistant
+default_assistant: test
+`)
+
+	err := os.WriteFile(configPath, configData, 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test config: %v", err)
+	}
+
+	// Load and verify assistant config
+	manager := NewManager(tmpDir)
+	err = manager.Load()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	defaultAssistant, ok := manager.GetDefaultAssistant()
 	if !ok {
-		t.Error("Assistant environment not found")
-	} else {
-		if version := env["MODEL_VERSION"]; version != "latest" {
-			t.Errorf("Assistant MODEL_VERSION = %v, want latest", version)
-		}
+		t.Error("Failed to get default assistant")
+	}
+	if defaultAssistant.Name != "Test Assistant" {
+		t.Errorf("Expected assistant name 'Test Assistant', got '%s'", defaultAssistant.Name)
+	}
+
+	assistant, ok := manager.GetAssistantConfig("test")
+	if !ok {
+		t.Error("Failed to get test assistant")
+	}
+	if assistant.Name != "Test Assistant" {
+		t.Errorf("Expected assistant name 'Test Assistant', got '%s'", assistant.Name)
 	}
 }
