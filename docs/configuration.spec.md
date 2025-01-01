@@ -114,6 +114,7 @@ You are an expert research assistant specializing in synthesizing complex inform
     * A centralized configuration file (config.yaml) stores runtime values for models and tools.
 2. Structure:
 ```yaml
+version: 1.0
 models:
   <provider_name>:
     <model_name>:
@@ -130,6 +131,7 @@ tools:
     * Environment variables (env) for tools are explicitly defined here.
 4. Example Config File:
 ```yaml
+version: 1.0
 models:
   openai:
     gpt-4:
