@@ -283,10 +283,19 @@ Building on the foundation and integration layers, this phase implements Skylark
   - Retry logic
   - Fallback options
   - State recovery
-- Create logging system:
-  - Structured logging
-  - Error aggregation
-  - Debugging support
+
+### 3.5 Logging
+
+- Implement structured logging with slog:
+  - Log levels (Debug, Info, Warn, Error)
+  - Source code information
+  - JSON and text output formats
+  - Context and attribute support
+- Add configuration options:
+  - Output destination
+  - Log level control
+  - Format selection
+  - Source location
 
 ## Phase 4: Polish & Documentation
 
