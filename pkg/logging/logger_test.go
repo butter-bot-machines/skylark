@@ -143,6 +143,11 @@ func TestSourceLocation(t *testing.T) {
 	if !strings.Contains(output, "source=") {
 		t.Error("Source location not included in log")
 	}
+
+	// Verify shortened source path
+	if strings.Contains(output, "/") {
+		t.Error("Source path is not shortened")
+	}
 }
 
 func TestHelperFunctions(t *testing.T) {

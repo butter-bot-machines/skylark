@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 )
 
 // Options configures the logger
@@ -36,6 +37,15 @@ func NewLogger(opts *Options) *slog.Logger {
 	handlerOpts := &slog.HandlerOptions{
 		Level:     opts.Level,
 		AddSource: opts.AddSource,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.SourceKey {
+				source, _ := a.Value.Any().(*slog.Source)
+				if source != nil {
+					source.File = filepath.Base(source.File)
+				}
+			}
+			return a
+		},
 	}
 
 	if opts.JSON {
