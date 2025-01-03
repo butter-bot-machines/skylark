@@ -214,3 +214,78 @@ func TestEndToEnd(t *testing.T) {
 	// - Tool execution
 	// - Response writing
 }
+
+// TestCommandInvalidation verifies that commands are properly invalidated
+func TestCommandInvalidation(t *testing.T) {
+	// Create a temporary directory for test files
+	tmpDir, err := os.MkdirTemp("", "skylark-invalidation-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create test configuration
+	cfg := &config.Config{
+		WatchPaths: []string{tmpDir},
+		Workers: config.WorkerConfig{
+			Count:     2,
+			QueueSize: 10,
+		},
+		FileWatch: config.FileWatchConfig{
+			DebounceDelay: 100 * time.Millisecond,
+			MaxDelay:      1 * time.Second,
+		},
+	}
+
+	// Create worker pool
+	pool := worker.NewPool(cfg)
+	defer pool.Stop()
+
+	// Create mock processor
+	proc, err := testutil.NewMockProcessor()
+	if err != nil {
+		t.Fatalf("Failed to create processor: %v", err)
+	}
+
+	// Create and start file watcher
+	w, err := watcher.New(cfg, pool.Queue(), proc)
+	if err != nil {
+		t.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer w.Stop()
+
+	// Create a test markdown file with valid and invalidated commands
+	testFile := filepath.Join(tmpDir, "test.md")
+	content := []byte("# Test Document\n\n!command test\n-!command already processed\n")
+	if err := os.WriteFile(testFile, content, 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Wait for file processing with timeout
+	deadline := time.After(2 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			t.Fatal("Timeout waiting for file to be processed")
+		case <-ticker.C:
+			stats := pool.Stats()
+			if stats.ProcessedJobs > 0 {
+				break // Proceed to verification
+			}
+		}
+	}
+
+	// Verify that the command was invalidated and the already invalidated command was ignored
+	updatedContent, err := os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read updated test file: %v", err)
+	}
+
+	expectedContent := "# Test Document\n\n-!command test\n-!command already processed\n"
+	if string(updatedContent) != expectedContent {
+		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, string(updatedContent))
+	}
+}
