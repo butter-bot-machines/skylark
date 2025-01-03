@@ -107,13 +107,18 @@ func (p *Processor) ProcessFile(path string) error {
 	var responses []commandResponse
 
 	for _, cmd := range commands {
+		// Ignore commands starting with -!
+		if strings.HasPrefix(cmd.Original, "-!") {
+			continue
+		}
+
 		logger.Debug("processing command",
 			"assistant", cmd.Assistant,
 			"text", cmd.Text,
 			"original", cmd.Original)
 		
 		// Get assistant
-		assistant, err := p.assistants.Get(cmd.Assistant)
+			assistant, err := p.assistants.Get(cmd.Assistant)
 		if err != nil {
 			return fmt.Errorf("failed to get assistant: %w", err)
 		}
@@ -205,6 +210,9 @@ func (p *Processor) updateFile(path string, responses []commandResponse) error {
 						newLines = append(newLines, "")
 					}
 				}
+
+				// Mark command as processed by replacing ! with -!
+				newLines[len(newLines)-1] = strings.Replace(newLines[len(newLines)-1], "!", "-!", 1)
 				break
 			}
 		}

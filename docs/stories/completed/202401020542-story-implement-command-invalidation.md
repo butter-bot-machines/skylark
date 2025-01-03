@@ -1,4 +1,12 @@
-# Story: Implement Command Invalidation
+# Story: Implement Command Invalidation (✓ Completed)
+
+## Status
+Completed on January 2, 2024 at 18:06
+- Implemented command invalidation by replacing `!` with `-!`
+- Updated command parsing to ignore `-!` prefixed commands
+- Modified response insertion to convert `!` to `-!` for processed commands
+- Ensured proper handling of whitespace and indentation
+- Added test cases to verify command invalidation behavior
 
 ## Background
 Currently, skylark enters an infinite loop when processing commands because it cannot distinguish between fresh commands and already-processed ones. When the processor updates a file with a command response, the file watcher detects this change and reprocesses the file, creating an infinite cycle.
@@ -37,12 +45,12 @@ After:
 - pkg/parser: Modify command detection logic
 
 ## Acceptance Criteria
-1. [ ] Processor correctly identifies and ignores `-!` prefixed commands
-2. [ ] Commands are properly marked as processed with `-!` prefix
-3. [ ] No infinite processing loops occur
-4. [ ] Command history is preserved in files
-5. [ ] Whitespace and indentation are preserved
-6. [ ] Tests verify command invalidation behavior
+1. [x] Processor correctly identifies and ignores `-!` prefixed commands
+2. [x] Commands are properly marked as processed with `-!` prefix
+3. [x] No infinite processing loops occur
+4. [x] Command history is preserved in files
+5. [x] Whitespace and indentation are preserved
+6. [x] Tests verify command invalidation behavior
 
 ## Impact Assessment
 
