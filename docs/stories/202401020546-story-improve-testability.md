@@ -24,9 +24,23 @@ func (m *Manager) Load() error {
     data, err := os.ReadFile(m.path)
     config.Environment.ConfigDir = filepath.Dir(m.path)
 }
+
+// Tool manager requires real compilation
+func (m *Manager) Compile(name string) error {
+    cmd := exec.Command("go", "build", "-o", binaryPath, mainFile)
+    output, err := cmd.CombinedOutput()
+}
+
+// Tool execution needs real processes
+func (t *Tool) Execute(input []byte, env map[string]string) error {
+    cmd := exec.Command(binaryPath)
+    stdin, err := cmd.StdinPipe()
+    stdout, err := cmd.StdoutPipe()
+    cmd.Env = append(os.Environ(), cmdEnv...)
+}
 ```
 
-2. Worker System Dependencies:
+2. System Dependencies:
 ```go
 // Worker pool creates own limits
 func NewPool(cfg *config.Config) *Pool {
@@ -40,6 +54,19 @@ func New(cfg *config.Config, ...) (*Watcher, error) {
     fsWatcher, err := fsnotify.NewWatcher()
     absPath, err := filepath.Abs(path)
     err := fsWatcher.Add(absPath)
+}
+
+// Tool compilation needs go compiler
+func Compile(name string) error {
+    cmd := exec.Command("go", "build", ...)
+    cmd.Dir = toolPath
+}
+
+// Tool execution needs system access
+func Execute(input []byte) error {
+    cmd.Env = append(os.Environ(), ...)
+    stdin, _ := cmd.StdinPipe()
+    stdout, _ := cmd.StdoutPipe()
 }
 ```
 
@@ -65,6 +92,16 @@ func DefaultLimits() ResourceLimits {
         MaxCPUTime: 50 * time.Millisecond,
     }
 }
+
+// Direct environment access
+func Execute(input []byte) error {
+    if path := os.Getenv("PATH"); path != "" {
+        cmdEnv = append(cmdEnv, "PATH="+path)
+    }
+    if value := os.Getenv(name); value != "" {
+        cmdEnv = append(cmdEnv, name+"="+value)
+    }
+}
 ```
 
 The result is that even simple operations require the entire system to be working:
@@ -78,17 +115,22 @@ The result is that even simple operations require the entire system to be workin
    - config.yaml
    - prompt.md
    - tool definitions
+   - go compiler
+   - tool binaries
 
 2. Working providers
    - OpenAI configuration
    - API key
    - Network access
+   - Process execution
+   - System environment
 
 3. Working resources
    - CPU limits
    - Memory limits
    - Network policy
    - Sandbox setup
+   - Process isolation
 ```
 
 ## Investigation Findings
@@ -156,6 +198,20 @@ type ResourceManager interface {
     WithCPULimit(d time.Duration) ResourceManager
     WithMemoryLimit(bytes int64) ResourceManager
     Run(ctx context.Context, fn func() error) error
+}
+
+// pkg/tool/interface.go
+type Compiler interface {
+    Compile(src string) (binary []byte, err error)
+}
+
+type Executor interface {
+    Execute(binary []byte, input []byte) (output []byte, err error)
+}
+
+type Environment interface {
+    GetEnv(name string) string
+    SetEnv(name, value string)
 }
 ```
 
