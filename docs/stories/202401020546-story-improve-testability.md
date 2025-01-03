@@ -1,9 +1,11 @@
 # Improve Integration Test Architecture
 
 ## Problem
+
 The codebase has tightly coupled dependencies across multiple layers:
 
 1. Command Processing Chain:
+
 ```go
 // Processor creates everything internally
 func New(cfg *config.Config) (*Processor, error) {
@@ -41,6 +43,7 @@ func (t *Tool) Execute(input []byte, env map[string]string) error {
 ```
 
 2. System Dependencies:
+
 ```go
 // Worker pool creates own limits
 func NewPool(cfg *config.Config) *Pool {
@@ -87,6 +90,7 @@ func (s *Sandbox) applyResourceLimits(pid int) error {
 ```
 
 3. Global State and Resources:
+
 ```go
 // Global logger initialization
 var logger *slog.Logger
@@ -152,6 +156,7 @@ func (a *AuditLog) Rotate() error {
 ```
 
 The result is that even simple operations require the entire system to be working:
+
 ```go
 // To test this transformation:
 "!command test" -> "-!command test"
@@ -195,6 +200,7 @@ The result is that even simple operations require the entire system to be workin
 ### Investigation Findings
 
 1. Successful Test Patterns:
+
 ```go
 // TestAssistantIntegration passes because:
 - Creates minimal test assistant
@@ -213,6 +219,7 @@ The result is that even simple operations require the entire system to be workin
 ```
 
 2. Problematic Test Patterns:
+
 ```go
 // TestCommandInvalidation fails because:
 - Needs real filesystem
@@ -244,6 +251,7 @@ The result is that even simple operations require the entire system to be workin
 ## Proposed Solution
 
 1. Add Core Interfaces:
+
 ```go
 // pkg/fs/interface.go
 type FileSystem interface {
@@ -319,6 +327,7 @@ type Logger interface {
 ```
 
 2. Add Component Options:
+
 ```go
 // pkg/processor/options.go
 type Options struct {
@@ -360,6 +369,7 @@ type Options struct {
 ```
 
 3. Add Test Implementations:
+
 ```go
 // pkg/testing/fs.go
 type MemoryFS struct {
@@ -399,6 +409,7 @@ type TestLogManager struct {
 ## Benefits
 
 1. Simpler Testing:
+
    - In-memory filesystem
    - No provider needed
    - No resource limits
@@ -407,6 +418,7 @@ type TestLogManager struct {
    - Fast execution
 
 2. Better Architecture:
+
    - Clear interfaces
    - Dependency injection
    - Resource isolation
@@ -425,6 +437,7 @@ type TestLogManager struct {
 ## Implementation Plan
 
 1. Core Interfaces (Week 1):
+
    - Create fs package
    - Create provider package
    - Create resource package
@@ -433,6 +446,7 @@ type TestLogManager struct {
    - Add options
 
 2. Component Updates (Week 2):
+
    - Update processor
    - Update worker
    - Update watcher
@@ -441,6 +455,7 @@ type TestLogManager struct {
    - Update security
 
 3. Test Support (Week 3):
+
    - Add memory filesystem
    - Add test provider
    - Add test resources
@@ -458,18 +473,21 @@ type TestLogManager struct {
 ## Migration Strategy
 
 1. Infrastructure (Week 1):
+
    - Add interfaces
    - Keep existing code
    - Add options
    - No breaking changes
 
 2. Components (Week 2-3):
+
    - One component at a time
    - Update tests first
    - Keep backwards compatibility
    - Gradual rollout
 
 3. Testing (Week 3):
+
    - Add test implementations
    - Convert unit tests
    - Update integration tests
@@ -484,6 +502,7 @@ type TestLogManager struct {
 ## Acceptance Criteria
 
 1. Core Functionality:
+
    - [ ] All tests pass with in-memory filesystem
    - [ ] Tests run without OpenAI config
    - [ ] No resource limits needed for tests
@@ -492,6 +511,7 @@ type TestLogManager struct {
    - [ ] Clear component boundaries
 
 2. Test Improvements:
+
    - [ ] Simple test setup
    - [ ] Fast execution
    - [ ] No filesystem dependencies
@@ -503,6 +523,7 @@ type TestLogManager struct {
    - [ ] No log rotation
 
 3. Architecture:
+
    - [ ] Clear interfaces
    - [ ] Proper dependency injection
    - [ ] Resource isolation
