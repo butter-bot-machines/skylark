@@ -128,6 +128,27 @@ func (s *Sandbox) Execute(cmd *exec.Cmd) error {
         syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
     })
 }
+
+// Audit log needs file privileges
+func NewAuditLog(cfg *config.Config) (*AuditLog, error) {
+    if err := os.MkdirAll(logDir, 0700); err != nil {
+        return nil, fmt.Errorf("failed to create audit log directory: %w", err)
+    }
+    file, err := os.OpenFile(
+        cfg.Security.AuditLog.Path,
+        os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+        0600,
+    )
+}
+
+// Log rotation needs file operations
+func (a *AuditLog) Rotate() error {
+    timestamp := time.Now().Format("20060102-150405")
+    rotatedPath := fmt.Sprintf("%s.%s", a.config.Path, timestamp)
+    if err := os.Rename(a.config.Path, rotatedPath); err != nil {
+        return fmt.Errorf("failed to rotate log: %w", err)
+    }
+}
 ```
 
 The result is that even simple operations require the entire system to be working:
@@ -145,6 +166,8 @@ The result is that even simple operations require the entire system to be workin
    - tool binaries
    - cache directories
    - temp directories
+   - log directories
+   - file permissions
 
 2. Working providers
    - OpenAI configuration
@@ -153,6 +176,7 @@ The result is that even simple operations require the entire system to be workin
    - Process execution
    - System environment
    - Process privileges
+   - File privileges
 
 3. Working resources
    - CPU limits
@@ -162,6 +186,8 @@ The result is that even simple operations require the entire system to be workin
    - Process isolation
    - System calls
    - Signal handling
+   - File locking
+   - File rotation
 ```
 
 ## Investigation Findings
@@ -271,6 +297,25 @@ type ResourceController interface {
     SetFileLimit(count int) error
     SetProcessLimit(count int) error
 }
+
+// pkg/security/interface.go
+type AuditLogger interface {
+    Log(event Event) error
+    Rotate() error
+    Close() error
+}
+
+type LogManager interface {
+    Create(path string, mode os.FileMode) (Logger, error)
+    Rotate(path string) error
+    Remove(path string) error
+}
+
+type Logger interface {
+    Write(data []byte) error
+    Sync() error
+    Close() error
+}
 ```
 
 2. Add Component Options:
@@ -304,6 +349,14 @@ type Options struct {
     Environment   Environment
     WorkingDir    string
 }
+
+// pkg/security/options.go
+type Options struct {
+    LogManager    LogManager
+    FileMode      os.FileMode
+    BufferSize    int
+    FlushInterval time.Duration
+}
 ```
 
 3. Add Test Implementations:
@@ -331,6 +384,15 @@ type TestProcess struct {
 // pkg/testing/sandbox.go
 type TestSandbox struct {
     processes map[int]*TestProcess
+}
+
+// pkg/testing/security.go
+type TestLogger struct {
+    events []Event
+}
+
+type TestLogManager struct {
+    loggers map[string]*TestLogger
 }
 ```
 
@@ -437,6 +499,8 @@ type TestSandbox struct {
    - [ ] No resource limits
    - [ ] No process execution
    - [ ] No system privileges
+   - [ ] No file privileges
+   - [ ] No log rotation
 
 3. Architecture:
    - [ ] Clear interfaces
