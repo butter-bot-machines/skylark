@@ -1,264 +1,311 @@
 # Improve Integration Test Architecture
 
 ## Problem
-The processor package has tightly coupled dependencies that prevent isolated testing:
+The codebase has tightly coupled dependencies across multiple layers:
 
-1. Processor.New Creates Everything:
+1. Command Processing Chain:
 ```go
+// Processor creates everything internally
 func New(cfg *config.Config) (*Processor, error) {
-    // Creates own tool manager
     toolMgr := tool.NewManager(...)
-
-    // Creates own provider (OpenAI only)
     p, err = openai.New("gpt-4", modelConfig)
-
-    // Creates own network policy
     networkPolicy := &sandbox.NetworkPolicy{...}
-
-    // Creates own assistant manager
     assistantMgr, err := assistant.NewManager(...)
+}
+
+// Assistant requires real filesystem
+func NewManager(basePath string, ...) (*Manager, error) {
+    promptPath := filepath.Join(basePath, "prompt.md")
+    content, err := os.ReadFile(promptPath)
+}
+
+// Config requires .skai directory
+func (m *Manager) Load() error {
+    data, err := os.ReadFile(m.path)
+    config.Environment.ConfigDir = filepath.Dir(m.path)
 }
 ```
 
-2. No Way to Mock Dependencies:
-   - Can't provide test provider
-   - Can't provide test assistant
-   - Can't bypass file operations
-   - Can't disable network policy
-
-3. Global State:
-   - Logger initialized in init()
-   - Network policy hardcoded
-   - OpenAI provider assumed
-
-The core issue is that simple operations (like marking a command as processed) require the entire dependency chain to be working:
+2. Worker System Dependencies:
 ```go
-// Just to test this transformation:
+// Worker pool creates own limits
+func NewPool(cfg *config.Config) *Pool {
+    p := &Pool{
+        limits: DefaultLimits(),
+    }
+}
+
+// Watcher requires real filesystem
+func New(cfg *config.Config, ...) (*Watcher, error) {
+    fsWatcher, err := fsnotify.NewWatcher()
+    absPath, err := filepath.Abs(path)
+    err := fsWatcher.Add(absPath)
+}
+```
+
+3. Global State and Resources:
+```go
+// Global logger initialization
+var logger *slog.Logger
+func init() {
+    logger = logging.NewLogger(...)
+}
+
+// Hardcoded network policy
+networkPolicy := &sandbox.NetworkPolicy{
+    AllowedHosts: []string{
+        "api.openai.com",
+    },
+}
+
+// Fixed resource limits
+func DefaultLimits() ResourceLimits {
+    return ResourceLimits{
+        MaxMemory:  256 * 1024 * 1024,
+        MaxCPUTime: 50 * time.Millisecond,
+    }
+}
+```
+
+The result is that even simple operations require the entire system to be working:
+```go
+// To test this transformation:
 "!command test" -> "-!command test"
 
-// We need working:
-- OpenAI provider
-- Tool manager
-- Assistant manager
-- Network policy
-- File operations
+// We need:
+1. Working filesystem
+   - .skai directory
+   - config.yaml
+   - prompt.md
+   - tool definitions
+
+2. Working providers
+   - OpenAI configuration
+   - API key
+   - Network access
+
+3. Working resources
+   - CPU limits
+   - Memory limits
+   - Network policy
+   - Sandbox setup
 ```
 
 ## Investigation Findings
 
 ### Investigation Findings
 
-1. TestAssistantIntegration Passes Because:
+1. Successful Test Patterns:
 ```go
-// Creates simple test assistant
-assistant := &testAssistant{
-    processedCommands: make(chan string, 1),
-}
+// TestAssistantIntegration passes because:
+- Creates minimal test assistant
+- Bypasses filesystem
+- Direct job creation
+- No provider needed
+- No resource limits
 
-// Direct job creation
-jobQueue <- &commandJob{
-    command:   "!test hello world",
-    assistant: assistant,
-}
+// TestWorkerPool passes because:
+- Uses simple job interface
+- No file operations
+- No provider needed
+- Minimal configuration
 ```
 
-2. TestCommandInvalidation Fails Because:
+2. Problematic Test Patterns:
 ```go
-// Uses real processor
-proc, err := testutil.NewMockProcessor()
+// TestCommandInvalidation fails because:
+- Needs real filesystem
+- Creates full processor chain
+- Requires OpenAI config
+- Uses resource limits
+- Real file operations
 
-// Mock processor isn't really a mock
-func NewMockProcessor() (*processor.Processor, error) {
-    // Still needs OpenAI config
-    cfg := &config.Config{
-        Models: map[string]map[string]config.ModelConfig{
-            "openai": {
-                "gpt-4": {
-                    APIKey: "test-key",
-                },
-            },
-        },
-    }
-    // Creates real processor
-    return processor.New(cfg)
-}
+// TestWatcherWorkerIntegration fails because:
+- Needs fsnotify
+- Real filesystem paths
+- Full processor chain
+- Resource limits
 ```
 
 3. Core Issues:
-   - No dependency injection
+   - Components create their dependencies
+   - Direct filesystem operations
+   - Hardcoded resource limits
+   - Global state (loggers, policies)
+   - Fixed provider (OpenAI)
    - No interface abstractions
-   - Components create dependencies
-   - Global state in init()
-   - Assumed OpenAI provider
 
 ## Proposed Solution
 
-1. Add Dependency Injection:
+1. Add Core Interfaces:
 ```go
-// pkg/processor/processor.go
-type Options struct {
-    Provider    provider.Provider    // Optional
-    Assistant   assistant.Manager    // Optional
-    Parser      parser.Parser       // Optional
-    Logger      *slog.Logger        // Optional
+// pkg/fs/interface.go
+type FileSystem interface {
+    Read(path string) ([]byte, error)
+    Write(path string, []byte) error
+    Watch(path string) (<-chan Event, error)
 }
 
-func New(cfg *config.Config, opts Options) (*Processor, error) {
-    p := &Processor{config: cfg}
+// pkg/provider/interface.go
+type Provider interface {
+    Send(ctx context.Context, prompt string) (*Response, error)
+}
 
-    // Use provided or create default
-    if opts.Provider != nil {
-        p.provider = opts.Provider
-    }
-
-    if opts.Assistant != nil {
-        p.assistants = opts.Assistant
-    }
-
-    if opts.Parser != nil {
-        p.parser = opts.Parser
-    }
-
-    if opts.Logger != nil {
-        p.logger = opts.Logger
-    }
-
-    return p, nil
+// pkg/resource/interface.go
+type ResourceManager interface {
+    WithCPULimit(d time.Duration) ResourceManager
+    WithMemoryLimit(bytes int64) ResourceManager
+    Run(ctx context.Context, fn func() error) error
 }
 ```
 
-2. Add Test Implementations:
+2. Add Component Options:
 ```go
-// test/testutil/mock_processor.go
+// pkg/processor/options.go
+type Options struct {
+    FileSystem FileSystem    // Optional
+    Provider   Provider      // Optional
+    Resources  ResourceManager // Optional
+    Logger     *slog.Logger   // Optional
+}
+
+// pkg/worker/options.go
+type Options struct {
+    Resources  ResourceManager
+    QueueSize  int
+    Workers    int
+}
+
+// pkg/watcher/options.go
+type Options struct {
+    FileSystem FileSystem
+    Filter     func(string) bool
+    Debounce   time.Duration
+}
+```
+
+3. Add Test Implementations:
+```go
+// pkg/testing/fs.go
+type MemoryFS struct {
+    files map[string][]byte
+    watch chan Event
+}
+
+// pkg/testing/provider.go
 type TestProvider struct {
     Response string
 }
 
-func (p *TestProvider) Send(ctx context.Context, prompt string) (*Response, error) {
-    return &Response{Content: p.Response}, nil
-}
-
-type TestAssistant struct {
-    Response string
-}
-
-func (a *TestAssistant) Process(cmd *parser.Command) (string, error) {
-    return a.Response, nil
-}
-
-// Usage in tests
-proc, err := processor.New(cfg, processor.Options{
-    Provider:  &TestProvider{Response: "OK"},
-    Assistant: &TestAssistant{Response: "OK"},
-})
-```
-
-3. Split File Operations:
-```go
-// pkg/processor/processor.go
-type FileProcessor interface {
-    ProcessFile(path string) error
-}
-
-// Implementation that just marks commands
-type MarkdownProcessor struct {
-    parser parser.Parser
-}
-
-func (p *MarkdownProcessor) ProcessFile(path string) error {
-    // Just handle ! -> -! transformation
-    // No provider or assistant needed
-}
+// pkg/testing/resources.go
+type NoopResources struct{}
 ```
 
 ## Benefits
 
 1. Simpler Testing:
-   - Can test command marking without provider
-   - Can bypass assistant for simple tests
-   - No need for OpenAI config
-   - Clear test implementations
-   - Isolated testing
+   - In-memory filesystem
+   - No provider needed
+   - No resource limits
+   - No global state
+   - Fast execution
 
 2. Better Architecture:
-   - Clear dependencies
-   - Optional components
-   - Interface-based design
-   - No global state
+   - Clear interfaces
+   - Dependency injection
+   - Resource isolation
+   - Component boundaries
    - Flexible configuration
 
 3. Production Improvements:
-   - Can swap providers
-   - Better error handling
-   - Configurable logging
-   - Cleaner code
-   - Easier maintenance
+   - Multiple providers
+   - Custom filesystems
+   - Resource control
+   - Better monitoring
+   - Error handling
 
 ## Implementation Plan
 
-1. Core Changes:
-   - Add processor options
-   - Create interfaces
-   - Remove global logger
-   - Split file operations
+1. Core Interfaces (Week 1):
+   - Create fs package
+   - Create provider package
+   - Create resource package
+   - Add interfaces
+   - Add options
 
-2. Test Support:
-   - Add mock implementations
-   - Create test helpers
-   - Update existing tests
-   - Add examples
+2. Component Updates (Week 2):
+   - Update processor
+   - Update worker
+   - Update watcher
+   - Update config
+   - Update security
 
-3. Documentation:
-   - Update processor docs
-   - Add testing guide
-   - Document patterns
+3. Test Support (Week 3):
+   - Add memory filesystem
+   - Add test provider
+   - Add test resources
+   - Update test helpers
+   - Convert tests
+
+4. Documentation (Week 4):
+   - Architecture updates
+   - Interface docs
+   - Testing guide
+   - Examples
    - Migration guide
 
 ## Migration Strategy
 
-1. Phase 1 - Interfaces:
-   - Add options struct
-   - Create interfaces
-   - Keep defaults
+1. Infrastructure (Week 1):
+   - Add interfaces
+   - Keep existing code
+   - Add options
    - No breaking changes
 
-2. Phase 2 - Tests:
-   - Add mock implementations
-   - Update test helpers
-   - Convert existing tests
-   - Add examples
+2. Components (Week 2-3):
+   - One component at a time
+   - Update tests first
+   - Keep backwards compatibility
+   - Gradual rollout
 
-3. Phase 3 - Cleanup:
-   - Remove global state
-   - Update documentation
+3. Testing (Week 3):
+   - Add test implementations
+   - Convert unit tests
+   - Update integration tests
+   - Verify coverage
+
+4. Cleanup (Week 4):
+   - Remove old patterns
+   - Update docs
    - Final testing
    - Release
 
 ## Acceptance Criteria
 
-1. TestCommandInvalidation:
-   - [ ] Passes without OpenAI config
-   - [ ] Uses mock provider
-   - [ ] No file operations
-   - [ ] Clear test setup
-   - [ ] Fast execution
+1. Core Functionality:
+   - [ ] All tests pass with in-memory filesystem
+   - [ ] Tests run without OpenAI config
+   - [ ] No resource limits needed for tests
+   - [ ] No global state dependencies
+   - [ ] Clear component boundaries
 
-2. Architecture:
+2. Test Improvements:
+   - [ ] Simple test setup
+   - [ ] Fast execution
+   - [ ] No filesystem dependencies
+   - [ ] No provider requirements
+   - [ ] No resource limits
+
+3. Architecture:
    - [ ] Clear interfaces
-   - [ ] Optional dependencies
+   - [ ] Proper dependency injection
+   - [ ] Resource isolation
+   - [ ] Component boundaries
    - [ ] No global state
-   - [ ] Proper injection
-   - [ ] Separated concerns
-
-3. Testing:
-   - [ ] Simple mock implementations
-   - [ ] Easy test setup
-   - [ ] Fast execution
-   - [ ] Clear patterns
-   - [ ] Good coverage
 
 4. Documentation:
-   - [ ] Interface docs
-   - [ ] Testing guide
-   - [ ] Migration steps
+   - [ ] Updated architecture docs
+   - [ ] Interface documentation
+   - [ ] Testing patterns
+   - [ ] Migration guide
    - [ ] Examples
