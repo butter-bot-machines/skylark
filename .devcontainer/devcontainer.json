@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "test": "go test ./test/...",
+    "build": "go build ./cmd/skylark",
+    "launch": "./skylark init && ./skylark run"
+  }
+}

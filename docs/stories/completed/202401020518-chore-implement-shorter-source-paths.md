@@ -1,4 +1,4 @@
-# Implement Shorter Source Paths in Logging (✓ Completed)
+# Implement Shorter Source Paths in Logging
 
 ## Status
 Completed on January 2, 2024 at 07:59

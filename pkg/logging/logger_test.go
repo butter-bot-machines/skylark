@@ -182,3 +182,54 @@ func TestHelperFunctions(t *testing.T) {
 		t.Error("WithGroup did not group attributes correctly")
 	}
 }
+
+func TestShortenedSourcePathsInTextFormat(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := NewLogger(&Options{
+		Level:     slog.LevelInfo,
+		Output:    buf,
+		AddSource: true,
+	})
+
+	logger.Info("test message")
+	output := buf.String()
+	t.Logf("Log output: %s", output)
+
+	if !strings.Contains(output, "source=") {
+		t.Error("Source location not included in log")
+	}
+
+	// Verify shortened source path
+	if strings.Contains(output, "/") {
+		t.Error("Source path is not shortened")
+	}
+}
+
+func TestShortenedSourcePathsInJSONFormat(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := NewLogger(&Options{
+		Level:     slog.LevelInfo,
+		Output:    buf,
+		AddSource: true,
+		JSON:      true,
+	})
+
+	logger.Info("test message")
+	output := buf.String()
+	t.Logf("Log output: %s", output)
+
+	var entry map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Errorf("Failed to parse JSON: %v", err)
+	}
+
+	if entry["source"] == nil {
+		t.Error("Source location not included in log")
+	}
+
+	// Verify shortened source path
+	source := entry["source"].(map[string]interface{})
+	if strings.Contains(source["file"].(string), "/") {
+		t.Error("Source path is not shortened")
+	}
+}
