@@ -1,234 +1,264 @@
 # Improve Integration Test Architecture
 
 ## Problem
-The codebase has pervasive filesystem access and tightly coupled dependencies that make testing difficult:
+The processor package has tightly coupled dependencies that prevent isolated testing:
 
-1. Direct Filesystem Access In:
-   - Processor (file reading/writing)
-   - Assistant (prompt loading)
-   - Config (configuration files)
-   - Security (audit logs, keys)
-   - Sandbox (file access control)
+1. Processor.New Creates Everything:
+```go
+func New(cfg *config.Config) (*Processor, error) {
+    // Creates own tool manager
+    toolMgr := tool.NewManager(...)
 
-2. Tightly Coupled Dependencies:
-   - Processor requires real provider
-   - Assistant needs real filesystem
-   - Config depends on file locations
-   - Security needs real files
-   - Tests use real temp directories
+    // Creates own provider (OpenAI only)
+    p, err = openai.New("gpt-4", modelConfig)
 
-3. Global State and Resources:
-   - Logger initialization in init()
-   - Hardcoded resource limits
-   - Fixed file paths
-   - Network policies
+    // Creates own network policy
+    networkPolicy := &sandbox.NetworkPolicy{...}
 
-The core issue is that basic operations (like marking a command as processed) require the entire system to be initialized with real files and dependencies.
+    // Creates own assistant manager
+    assistantMgr, err := assistant.NewManager(...)
+}
+```
+
+2. No Way to Mock Dependencies:
+   - Can't provide test provider
+   - Can't provide test assistant
+   - Can't bypass file operations
+   - Can't disable network policy
+
+3. Global State:
+   - Logger initialized in init()
+   - Network policy hardcoded
+   - OpenAI provider assumed
+
+The core issue is that simple operations (like marking a command as processed) require the entire dependency chain to be working:
+```go
+// Just to test this transformation:
+"!command test" -> "-!command test"
+
+// We need working:
+- OpenAI provider
+- Tool manager
+- Assistant manager
+- Network policy
+- File operations
+```
 
 ## Investigation Findings
 
 ### Investigation Findings
 
-1. File Operation Patterns:
-   - Direct os.ReadFile/WriteFile calls
-   - Hardcoded file paths
-   - Real temp directories in tests
-   - No filesystem abstraction
-   - Mixed file and business logic
+1. TestAssistantIntegration Passes Because:
+```go
+// Creates simple test assistant
+assistant := &testAssistant{
+    processedCommands: make(chan string, 1),
+}
 
-2. Test Challenges:
-   - TestAssistantIntegration passes because it avoids files
-   - TestCommandInvalidation fails due to full chain
-   - Performance tests need real files
-   - Security tests touch filesystem
-   - Integration tests use temp dirs
+// Direct job creation
+jobQueue <- &commandJob{
+    command:   "!test hello world",
+    assistant: assistant,
+}
+```
+
+2. TestCommandInvalidation Fails Because:
+```go
+// Uses real processor
+proc, err := testutil.NewMockProcessor()
+
+// Mock processor isn't really a mock
+func NewMockProcessor() (*processor.Processor, error) {
+    // Still needs OpenAI config
+    cfg := &config.Config{
+        Models: map[string]map[string]config.ModelConfig{
+            "openai": {
+                "gpt-4": {
+                    APIKey: "test-key",
+                },
+            },
+        },
+    }
+    // Creates real processor
+    return processor.New(cfg)
+}
+```
 
 3. Core Issues:
-   - No filesystem abstraction
    - No dependency injection
-   - Mixed concerns
-   - Global state
-   - Resource coupling
+   - No interface abstractions
+   - Components create dependencies
+   - Global state in init()
+   - Assumed OpenAI provider
 
 ## Proposed Solution
 
-1. Create Filesystem Interface
-```go
-// pkg/fs/interface.go
-type FileSystem interface {
-    Read(path string) ([]byte, error)
-    Write(path string, content []byte) error)
-    Exists(path string) bool
-    MkdirAll(path string, perm os.FileMode) error
-    Remove(path string) error
-    Walk(root string, fn WalkFn) error
-}
-
-// Implementations
-type OSFileSystem struct{} // Production
-type MemoryFileSystem struct{} // Testing
-type ReadOnlyFileSystem struct{} // Security
-```
-
-2. Add Dependency Injection
+1. Add Dependency Injection:
 ```go
 // pkg/processor/processor.go
-type Config struct {
-    FileSystem FileSystem
-    Provider   Provider
-    Limits     ResourceLimits
+type Options struct {
+    Provider    provider.Provider    // Optional
+    Assistant   assistant.Manager    // Optional
+    Parser      parser.Parser       // Optional
+    Logger      *slog.Logger        // Optional
 }
 
-// pkg/assistant/assistant.go
-type Config struct {
-    FileSystem FileSystem
-    Provider   Provider
-    Tools      ToolManager
-}
+func New(cfg *config.Config, opts Options) (*Processor, error) {
+    p := &Processor{config: cfg}
 
-// pkg/security/security.go
-type Config struct {
-    FileSystem FileSystem
-    Audit      AuditConfig
+    // Use provided or create default
+    if opts.Provider != nil {
+        p.provider = opts.Provider
+    }
+
+    if opts.Assistant != nil {
+        p.assistants = opts.Assistant
+    }
+
+    if opts.Parser != nil {
+        p.parser = opts.Parser
+    }
+
+    if opts.Logger != nil {
+        p.logger = opts.Logger
+    }
+
+    return p, nil
 }
 ```
 
-3. Create Test Utilities
+2. Add Test Implementations:
 ```go
-// pkg/testing/fs.go
-type TestFS struct {
-    Files map[string][]byte
+// test/testutil/mock_processor.go
+type TestProvider struct {
+    Response string
 }
 
-func NewTestFS(files map[string][]byte) *TestFS
-func WithFile(name, content string) Option
-func WithTempDir() Option
+func (p *TestProvider) Send(ctx context.Context, prompt string) (*Response, error) {
+    return &Response{Content: p.Response}, nil
+}
 
-// Usage
-fs := testing.NewTestFS(
-    testing.WithFile("config.yaml", configData),
-    testing.WithFile("prompt.md", promptData),
-)
+type TestAssistant struct {
+    Response string
+}
+
+func (a *TestAssistant) Process(cmd *parser.Command) (string, error) {
+    return a.Response, nil
+}
+
+// Usage in tests
+proc, err := processor.New(cfg, processor.Options{
+    Provider:  &TestProvider{Response: "OK"},
+    Assistant: &TestAssistant{Response: "OK"},
+})
 ```
 
-4. Update Components
+3. Split File Operations:
 ```go
 // pkg/processor/processor.go
-type Processor struct {
-    fs       FileSystem    // Filesystem access
-    provider Provider      // Optional provider
-    limits   Limits       // Optional limits
+type FileProcessor interface {
+    ProcessFile(path string) error
 }
 
-// pkg/assistant/assistant.go
-type Assistant struct {
-    fs      FileSystem   // Filesystem access
-    prompt  string       // Cached prompt
-    config  Config      // Runtime config
+// Implementation that just marks commands
+type MarkdownProcessor struct {
+    parser parser.Parser
+}
+
+func (p *MarkdownProcessor) ProcessFile(path string) error {
+    // Just handle ! -> -! transformation
+    // No provider or assistant needed
 }
 ```
 
 ## Benefits
 
 1. Simpler Testing:
-   - In-memory filesystem for unit tests
-   - No temp directories needed
-   - Controlled test environments
-   - Isolated component testing
-   - Predictable behavior
+   - Can test command marking without provider
+   - Can bypass assistant for simple tests
+   - No need for OpenAI config
+   - Clear test implementations
+   - Isolated testing
 
 2. Better Architecture:
-   - Clear dependency boundaries
-   - Explicit file operations
-   - Configurable components
-   - Testable security
-   - Resource isolation
+   - Clear dependencies
+   - Optional components
+   - Interface-based design
+   - No global state
+   - Flexible configuration
 
 3. Production Improvements:
-   - Filesystem abstraction
+   - Can swap providers
    - Better error handling
-   - Security controls
-   - Performance monitoring
+   - Configurable logging
    - Cleaner code
+   - Easier maintenance
 
 ## Implementation Plan
 
-1. Core Infrastructure:
-   - Create filesystem interface
-   - Implement OS filesystem
-   - Implement memory filesystem
-   - Add test utilities
+1. Core Changes:
+   - Add processor options
+   - Create interfaces
+   - Remove global logger
+   - Split file operations
 
-2. Update Components:
-   - Modify processor
-   - Update assistant
-   - Adapt security
-   - Adjust config
-   - Update sandbox
-
-3. Testing Support:
-   - Add test filesystem
+2. Test Support:
+   - Add mock implementations
    - Create test helpers
-   - Update test suites
+   - Update existing tests
    - Add examples
 
-4. Documentation:
-   - Update architecture docs
-   - Add testing guides
+3. Documentation:
+   - Update processor docs
+   - Add testing guide
    - Document patterns
-   - Provide examples
+   - Migration guide
 
 ## Migration Strategy
 
-1. Infrastructure (Week 1):
-   - Add fs package
+1. Phase 1 - Interfaces:
+   - Add options struct
    - Create interfaces
-   - Add test utilities
-   - No production changes
+   - Keep defaults
+   - No breaking changes
 
-2. Component Updates (Week 2-3):
-   - One component at a time
-   - Keep old code working
-   - Update tests first
-   - Gradual rollout
+2. Phase 2 - Tests:
+   - Add mock implementations
+   - Update test helpers
+   - Convert existing tests
+   - Add examples
 
-3. Testing Migration (Week 3-4):
-   - Convert unit tests
-   - Update integration tests
-   - Add new test patterns
-   - Verify coverage
-
-4. Cleanup (Week 4):
-   - Remove old patterns
+3. Phase 3 - Cleanup:
+   - Remove global state
    - Update documentation
    - Final testing
    - Release
 
 ## Acceptance Criteria
 
-1. Functionality:
-   - [ ] All tests pass with memory filesystem
-   - [ ] No changes to production behavior
-   - [ ] Security tests work with read-only filesystem
-   - [ ] Performance tests run without temp files
-   - [ ] Integration tests use test utilities
+1. TestCommandInvalidation:
+   - [ ] Passes without OpenAI config
+   - [ ] Uses mock provider
+   - [ ] No file operations
+   - [ ] Clear test setup
+   - [ ] Fast execution
 
 2. Architecture:
-   - [ ] Clear filesystem abstraction
-   - [ ] Proper dependency injection
-   - [ ] No direct os package usage
-   - [ ] Resource isolation
-   - [ ] Better error handling
+   - [ ] Clear interfaces
+   - [ ] Optional dependencies
+   - [ ] No global state
+   - [ ] Proper injection
+   - [ ] Separated concerns
 
 3. Testing:
-   - [ ] Simpler test setup
-   - [ ] No temp directories
-   - [ ] Predictable test behavior
-   - [ ] Good test coverage
-   - [ ] Clear testing patterns
+   - [ ] Simple mock implementations
+   - [ ] Easy test setup
+   - [ ] Fast execution
+   - [ ] Clear patterns
+   - [ ] Good coverage
 
 4. Documentation:
-   - [ ] Updated architecture docs
-   - [ ] Testing guidelines
-   - [ ] Migration guide
-   - [ ] Example patterns
+   - [ ] Interface docs
+   - [ ] Testing guide
+   - [ ] Migration steps
+   - [ ] Examples
