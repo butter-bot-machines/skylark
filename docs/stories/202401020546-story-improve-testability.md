@@ -68,6 +68,22 @@ func Execute(input []byte) error {
     stdin, _ := cmd.StdinPipe()
     stdout, _ := cmd.StdoutPipe()
 }
+
+// Sandbox needs system calls
+func (s *Sandbox) Execute(cmd *exec.Cmd) error {
+    cmd.SysProcAttr = &syscall.SysProcAttr{
+        Setpgid: true,
+    }
+    syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+    syscall.Setrlimit(syscall.RLIMIT_AS, &rLimit)
+}
+
+// Process isolation needs privileges
+func (s *Sandbox) applyResourceLimits(pid int) error {
+    syscall.Setrlimit(RLIMIT_NPROC, &rLimit)
+    syscall.Setrlimit(syscall.RLIMIT_FSIZE, &rLimit)
+    syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit)
+}
 ```
 
 3. Global State and Resources:
@@ -102,6 +118,16 @@ func Execute(input []byte) error {
         cmdEnv = append(cmdEnv, name+"="+value)
     }
 }
+
+// Direct process management
+func (s *Sandbox) Execute(cmd *exec.Cmd) error {
+    cmd.SysProcAttr = &syscall.SysProcAttr{
+        Setpgid: true,
+    }
+    timer := time.AfterFunc(s.Limits.MaxCPUTime, func() {
+        syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+    })
+}
 ```
 
 The result is that even simple operations require the entire system to be working:
@@ -117,6 +143,8 @@ The result is that even simple operations require the entire system to be workin
    - tool definitions
    - go compiler
    - tool binaries
+   - cache directories
+   - temp directories
 
 2. Working providers
    - OpenAI configuration
@@ -124,6 +152,7 @@ The result is that even simple operations require the entire system to be workin
    - Network access
    - Process execution
    - System environment
+   - Process privileges
 
 3. Working resources
    - CPU limits
@@ -131,6 +160,8 @@ The result is that even simple operations require the entire system to be workin
    - Network policy
    - Sandbox setup
    - Process isolation
+   - System calls
+   - Signal handling
 ```
 
 ## Investigation Findings
@@ -145,12 +176,14 @@ The result is that even simple operations require the entire system to be workin
 - Direct job creation
 - No provider needed
 - No resource limits
+- No process execution
 
 // TestWorkerPool passes because:
 - Uses simple job interface
 - No file operations
 - No provider needed
 - Minimal configuration
+- No system calls
 ```
 
 2. Problematic Test Patterns:
@@ -161,12 +194,15 @@ The result is that even simple operations require the entire system to be workin
 - Requires OpenAI config
 - Uses resource limits
 - Real file operations
+- Process execution
+- System privileges
 
 // TestWatcherWorkerIntegration fails because:
 - Needs fsnotify
 - Real filesystem paths
 - Full processor chain
 - Resource limits
+- Process management
 ```
 
 3. Core Issues:
@@ -175,6 +211,8 @@ The result is that even simple operations require the entire system to be workin
    - Hardcoded resource limits
    - Global state (loggers, policies)
    - Fixed provider (OpenAI)
+   - Direct process management
+   - System call requirements
    - No interface abstractions
 
 ## Proposed Solution
@@ -213,6 +251,26 @@ type Environment interface {
     GetEnv(name string) string
     SetEnv(name, value string)
 }
+
+// pkg/sandbox/interface.go
+type ProcessManager interface {
+    Start(cmd *Command) (Process, error)
+    Kill(pid int) error
+    SetLimits(pid int, limits ResourceLimits) error
+}
+
+type Process interface {
+    ID() int
+    Wait() error
+    Signal(sig os.Signal) error
+}
+
+type ResourceController interface {
+    SetMemoryLimit(bytes int64) error
+    SetCPULimit(seconds int) error
+    SetFileLimit(count int) error
+    SetProcessLimit(count int) error
+}
 ```
 
 2. Add Component Options:
@@ -238,6 +296,14 @@ type Options struct {
     Filter     func(string) bool
     Debounce   time.Duration
 }
+
+// pkg/sandbox/options.go
+type Options struct {
+    ProcessManager ProcessManager
+    Resources     ResourceController
+    Environment   Environment
+    WorkingDir    string
+}
 ```
 
 3. Add Test Implementations:
@@ -255,6 +321,17 @@ type TestProvider struct {
 
 // pkg/testing/resources.go
 type NoopResources struct{}
+
+// pkg/testing/process.go
+type TestProcess struct {
+    output []byte
+    error  error
+}
+
+// pkg/testing/sandbox.go
+type TestSandbox struct {
+    processes map[int]*TestProcess
+}
 ```
 
 ## Benefits
@@ -264,6 +341,7 @@ type NoopResources struct{}
    - No provider needed
    - No resource limits
    - No global state
+   - No system calls
    - Fast execution
 
 2. Better Architecture:
@@ -271,6 +349,7 @@ type NoopResources struct{}
    - Dependency injection
    - Resource isolation
    - Component boundaries
+   - Process abstraction
    - Flexible configuration
 
 3. Production Improvements:
@@ -278,6 +357,7 @@ type NoopResources struct{}
    - Custom filesystems
    - Resource control
    - Better monitoring
+   - Process management
    - Error handling
 
 ## Implementation Plan
@@ -286,6 +366,7 @@ type NoopResources struct{}
    - Create fs package
    - Create provider package
    - Create resource package
+   - Create process package
    - Add interfaces
    - Add options
 
@@ -293,6 +374,7 @@ type NoopResources struct{}
    - Update processor
    - Update worker
    - Update watcher
+   - Update sandbox
    - Update config
    - Update security
 
@@ -300,6 +382,7 @@ type NoopResources struct{}
    - Add memory filesystem
    - Add test provider
    - Add test resources
+   - Add test process
    - Update test helpers
    - Convert tests
 
@@ -343,6 +426,7 @@ type NoopResources struct{}
    - [ ] Tests run without OpenAI config
    - [ ] No resource limits needed for tests
    - [ ] No global state dependencies
+   - [ ] No system calls required
    - [ ] Clear component boundaries
 
 2. Test Improvements:
@@ -351,11 +435,14 @@ type NoopResources struct{}
    - [ ] No filesystem dependencies
    - [ ] No provider requirements
    - [ ] No resource limits
+   - [ ] No process execution
+   - [ ] No system privileges
 
 3. Architecture:
    - [ ] Clear interfaces
    - [ ] Proper dependency injection
    - [ ] Resource isolation
+   - [ ] Process abstraction
    - [ ] Component boundaries
    - [ ] No global state
 
