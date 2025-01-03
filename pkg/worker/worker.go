@@ -12,12 +12,13 @@ import (
 
 // Pool represents a worker pool for processing jobs
 type Pool struct {
-	workers    []*worker
-	jobQueue   chan job.Job
-	done       chan struct{}
-	wg         sync.WaitGroup
-	stats      *Stats
-	limits     ResourceLimits
+	workers       []*worker
+	jobQueue      chan job.Job
+	done          chan struct{}
+	wg            sync.WaitGroup
+	stats         *Stats
+	limits        ResourceLimits
+	queueWrappers sync.WaitGroup // Track wrapper goroutines
 }
 
 // Stats tracks worker pool statistics
@@ -55,9 +56,33 @@ func NewPool(cfg *config.Config) *Pool {
 	return p
 }
 
-// Queue returns the job queue channel
+// Queue returns a channel for queueing jobs
 func (p *Pool) Queue() chan<- job.Job {
-	return p.jobQueue
+	// Create a buffered channel with same capacity as jobQueue
+	ch := make(chan job.Job, cap(p.jobQueue))
+	p.queueWrappers.Add(1)
+	go func() {
+		defer p.queueWrappers.Done()
+		defer close(ch)
+		for {
+			select {
+			case <-p.done:
+				return
+			case j, ok := <-ch:
+				if !ok {
+					return
+				}
+				atomic.AddUint64(&p.stats.QueuedJobs, 1)
+				// Try to send the job, but give up if pool is shutting down
+				select {
+				case <-p.done:
+					return
+				case p.jobQueue <- j:
+				}
+			}
+		}
+	}()
+	return ch
 }
 
 // Stats returns the current worker pool statistics
@@ -81,8 +106,10 @@ func GetStats(p *Pool, counter *uint64) uint64 {
 
 // Stop gracefully shuts down the worker pool
 func (p *Pool) Stop() {
-	close(p.done)
-	p.wg.Wait()
+	close(p.done)           // Signal all goroutines to stop
+	p.queueWrappers.Wait()  // Wait for queue wrapper goroutines to finish
+	close(p.jobQueue)       // Close the job queue
+	p.wg.Wait()            // Wait for all workers to finish
 }
 
 func (w *worker) start() {
@@ -125,7 +152,8 @@ func (w *worker) start() {
 				job.OnFailure(err)
 			}
 			atomic.AddUint64(&w.pool.stats.ProcessedJobs, 1)
-			atomic.AddUint64(&w.pool.stats.QueuedJobs, ^uint64(0))
+			// Decrement queued jobs counter
+			atomic.AddUint64(&w.pool.stats.QueuedJobs, ^uint64(0)) // This is equivalent to subtracting 1
 		}
 	}
 }
