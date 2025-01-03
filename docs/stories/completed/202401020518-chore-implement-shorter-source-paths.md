@@ -1,5 +1,12 @@
 # Implement Shorter Source Paths in Logging
 
+## Status
+Completed on January 2, 2024 at 07:59
+- Implemented shorter source paths in logging
+- Updated HandlerOptions to include ReplaceAttr function
+- Verified source paths are shortened in both text and JSON output formats
+- Ensured line numbers are preserved
+
 ## Context
 
 Users are reporting that log messages are too verbose due to the full file paths included in the source information. Currently, when source logging is enabled (the default), the full file path is shown (e.g. `/home/user/projects/skylark/pkg/logging/logger.go:42`).
