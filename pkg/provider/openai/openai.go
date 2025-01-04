@@ -35,16 +35,6 @@ const apiTimeout = 30 * time.Second
 
 var apiURL = "https://api.openai.com/v1/chat/completions"
 
-// Provider implements the provider interface for OpenAI
-type Provider struct {
-	client     *http.Client
-	config     config.ModelConfig
-	model      string
-	tools      map[string]Tool
-	rateLimits RateLimiting
-	mu         sync.RWMutex
-}
-
 // Response types for parsing OpenAI API responses
 type Response struct {
 	Choices []struct {
@@ -66,8 +56,29 @@ type Response struct {
 	} `json:"usage"`
 }
 
+// Options configures the OpenAI provider
+type Options struct {
+	// HTTPClient for making requests (optional)
+	HTTPClient provider.HTTPClient
+	// RateLimiter for controlling request rates (optional)
+	RateLimiter RateLimiting
+	// Monitor for tracking metrics (optional)
+	Monitor provider.Monitor
+}
+
+// Provider implements the provider interface for OpenAI
+type Provider struct {
+	client     provider.HTTPClient
+	config     config.ModelConfig
+	model      string
+	tools      map[string]Tool
+	rateLimits RateLimiting
+	monitor    provider.Monitor
+	mu         sync.RWMutex
+}
+
 // New creates a new OpenAI provider
-func New(model string, cfg config.ModelConfig) (*Provider, error) {
+func New(model string, cfg config.ModelConfig, opts Options) (*Provider, error) {
 	if cfg.APIKey == "" {
 		return nil, &provider.Error{
 			Code:    provider.ErrAuthentication,
@@ -75,24 +86,44 @@ func New(model string, cfg config.ModelConfig) (*Provider, error) {
 		}
 	}
 
-	client := &http.Client{
-		Timeout: apiTimeout,
+	// Use provided client or create default
+	client := opts.HTTPClient
+	if client == nil {
+		client = &http.Client{
+			Timeout: apiTimeout,
+		}
+	}
+
+	// Use provided rate limiter or create default
+	rateLimiter := opts.RateLimiter
+	if rateLimiter == nil {
+		rateLimiter = NewRateLimiter(RateLimitConfig{
+			RequestsPerMinute: 3,
+			TokensPerMinute:   1000,
+		})
 	}
 
 	return &Provider{
-		client: client,
-		config: cfg,
-		model:  model,
-		tools:  make(map[string]Tool),
-		rateLimits: NewRateLimiter(RateLimitConfig{
-			RequestsPerMinute: 3, // Lower limit for testing
-			TokensPerMinute:   1000,
-		}),
+		client:     client,
+		config:     cfg,
+		model:      model,
+		tools:      make(map[string]Tool),
+		rateLimits: rateLimiter,
+		monitor:    opts.Monitor,
 	}, nil
 }
 
 // Send sends a prompt to OpenAI and returns the response
 func (p *Provider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
+	start := time.Now()
+	success := false
+	defer func() {
+		if p.monitor != nil {
+			p.monitor.RecordRequest(success)
+			p.monitor.RecordLatency(time.Since(start).Seconds())
+		}
+	}()
+
 	// Check context and rate limits
 	select {
 	case <-ctx.Done():
@@ -140,17 +171,26 @@ func (p *Provider) Send(ctx context.Context, prompt string) (*provider.Response,
 		return nil, err
 	}
 
-	// Handle tool calls if present
-	if len(resp.Choices[0].Message.ToolCalls) > 0 {
-		return p.handleToolCalls(ctx, resp, req)
-	}
-
-	// Update rate limits
+	// Update rate limits and metrics for initial response
 	if err := p.rateLimits.AddTokens(resp.Usage.TotalTokens); err != nil {
 		return nil, err
 	}
 
-	// Return response
+	if p.monitor != nil {
+		p.monitor.RecordTokens(
+			resp.Usage.PromptTokens,
+			resp.Usage.CompletionTokens,
+			resp.Usage.TotalTokens,
+		)
+	}
+
+	// Handle tool calls if present
+	if len(resp.Choices[0].Message.ToolCalls) > 0 {
+		success = true // Mark initial request as successful
+		return p.handleToolCalls(ctx, resp, req)
+	}
+
+	success = true // Mark request as successful
 	return &provider.Response{
 		Content: resp.Choices[0].Message.Content,
 		Usage: provider.Usage{
@@ -163,6 +203,9 @@ func (p *Provider) Send(ctx context.Context, prompt string) (*provider.Response,
 
 // Close implements provider.Provider
 func (p *Provider) Close() error {
+	if closer, ok := p.client.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 	return nil
 }
 
@@ -179,6 +222,14 @@ func (p *Provider) handleToolCalls(
 	resp *Response,
 	req map[string]any,
 ) (*provider.Response, error) {
+	start := time.Now()
+	success := false
+	defer func() {
+		if p.monitor != nil {
+			p.monitor.RecordRequest(success)
+			p.monitor.RecordLatency(time.Since(start).Seconds())
+		}
+	}()
 	// Build new request with updated messages and tools
 	newReq := map[string]any{
 		"model":       req["model"],
@@ -228,7 +279,7 @@ func (p *Provider) handleToolCalls(
 		}
 
 		// Execute tool
-		result, err := tool.Execute([]byte(call.Function.Arguments), nil) // Environment handling coming in story:202401010225
+		result, err := tool.Execute([]byte(call.Function.Arguments), nil)
 		if err != nil {
 			return nil, &provider.Error{
 				Code:    provider.ErrServerError,
@@ -251,11 +302,20 @@ func (p *Provider) handleToolCalls(
 		return nil, err
 	}
 
-	// Update rate limits
+	// Update rate limits and metrics
 	if err := p.rateLimits.AddTokens(resp.Usage.TotalTokens); err != nil {
 		return nil, err
 	}
 
+	if p.monitor != nil {
+		p.monitor.RecordTokens(
+			resp.Usage.PromptTokens,
+			resp.Usage.CompletionTokens,
+			resp.Usage.TotalTokens,
+		)
+	}
+
+	success = true // Mark tool call request as successful
 	return &provider.Response{
 		Content: resp.Choices[0].Message.Content,
 		Usage: provider.Usage{

@@ -3,6 +3,8 @@ package watcher
 import (
 	"testing"
 	"time"
+
+	"github.com/butter-bot-machines/skylark/pkg/timing"
 )
 
 func TestDebouncer(t *testing.T) {
@@ -46,19 +48,20 @@ func TestDebouncer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var count int
-			d := newDebouncer(tt.delay, tt.maxDelay)
+			mock := timing.NewMock()
+			d := newDebouncer(tt.delay, tt.maxDelay, mock)
 			defer d.Stop()
 
 			// Send events with specified delays
 			for _, delay := range tt.events {
-				time.Sleep(delay)
+				mock.Add(delay)
 				d.Debounce("test", func() {
 					count++
 				})
 			}
 
 			// Wait for all events to process
-			time.Sleep(tt.delay * 2)
+			mock.Add(tt.delay * 2)
 
 			if count != tt.want {
 				t.Errorf("got %d callbacks, want %d", count, tt.want)
@@ -68,7 +71,8 @@ func TestDebouncer(t *testing.T) {
 }
 
 func TestDebouncerStop(t *testing.T) {
-	d := newDebouncer(100*time.Millisecond, time.Second)
+	mock := timing.NewMock()
+	d := newDebouncer(100*time.Millisecond, time.Second, mock)
 
 	// Queue some events
 	for i := 0; i < 5; i++ {
@@ -80,12 +84,13 @@ func TestDebouncerStop(t *testing.T) {
 	// Stop immediately
 	d.Stop()
 
-	// Wait to ensure no callbacks are executed
-	time.Sleep(200 * time.Millisecond)
+	// Advance time to ensure no callbacks are executed
+	mock.Add(200 * time.Millisecond)
 }
 
 func TestDebouncerConcurrent(t *testing.T) {
-	d := newDebouncer(50*time.Millisecond, time.Second)
+	mock := timing.NewMock()
+	d := newDebouncer(50*time.Millisecond, time.Second, mock)
 	defer d.Stop()
 
 	// Send events concurrently
@@ -93,7 +98,7 @@ func TestDebouncerConcurrent(t *testing.T) {
 	go func() {
 		for i := 0; i < 100; i++ {
 			d.Debounce("test", func() {})
-			time.Sleep(time.Millisecond)
+			mock.Add(time.Millisecond)
 		}
 		close(done)
 	}()
@@ -101,7 +106,7 @@ func TestDebouncerConcurrent(t *testing.T) {
 	select {
 	case <-done:
 		// Test completed successfully
-	case <-time.After(time.Second):
+	case <-mock.After(time.Second):
 		t.Fatal("test timed out")
 	}
 }

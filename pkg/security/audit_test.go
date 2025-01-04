@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
 func TestAuditLog(t *testing.T) {
@@ -18,8 +19,8 @@ func TestAuditLog(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		Security: config.SecurityConfig{
-			AuditLog: config.AuditLogConfig{
+		Security: types.SecurityConfig{
+			AuditLog: types.AuditLogConfig{
 				Enabled:       true,
 				Path:         logPath,
 				RetentionDays: 30,
@@ -255,8 +256,8 @@ func TestAuditLogErrors(t *testing.T) {
 	// Test invalid path
 	t.Run("invalid path", func(t *testing.T) {
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
-				AuditLog: config.AuditLogConfig{
+			Security: types.SecurityConfig{
+				AuditLog: types.AuditLogConfig{
 					Enabled: true,
 					Path:   "/nonexistent/path/audit.log",
 				},
@@ -272,8 +273,8 @@ func TestAuditLogErrors(t *testing.T) {
 	// Test disabled audit log
 	t.Run("disabled audit log", func(t *testing.T) {
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
-				AuditLog: config.AuditLogConfig{
+			Security: types.SecurityConfig{
+				AuditLog: types.AuditLogConfig{
 					Enabled: false,
 					Path:   "audit.log",
 				},

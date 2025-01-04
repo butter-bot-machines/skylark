@@ -12,9 +12,9 @@ func NewMockProcessor() (*processor.Processor, error) {
 		Environment: config.EnvironmentConfig{
 			ConfigDir: "/tmp/test",
 		},
-		Models: map[string]map[string]config.ModelConfig{
+		Models: map[string]config.ModelConfigSet{
 			"openai": {
-				"gpt-4": {
+				"gpt-4": config.ModelConfig{
 					APIKey: "test-key",
 				},
 			},

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
 func TestKeyStore(t *testing.T) {
@@ -24,7 +25,7 @@ func TestKeyStore(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		Security: config.SecurityConfig{
+		Security: types.SecurityConfig{
 			EncryptionKey:  encodedKey,
 			KeyStoragePath: keyPath,
 		},
@@ -197,7 +198,7 @@ func TestKeyStoreErrors(t *testing.T) {
 	// Test invalid encryption key
 	t.Run("invalid encryption key", func(t *testing.T) {
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
+			Security: types.SecurityConfig{
 				EncryptionKey:  "invalid-base64",
 				KeyStoragePath: "test.dat",
 			},
@@ -221,7 +222,7 @@ func TestKeyStoreErrors(t *testing.T) {
 		}
 
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
+			Security: types.SecurityConfig{
 				EncryptionKey:  base64.StdEncoding.EncodeToString(make([]byte, 32)),
 				KeyStoragePath: keyPath,
 			},

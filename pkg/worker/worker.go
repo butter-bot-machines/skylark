@@ -1,13 +1,17 @@
 package worker
 
 import (
-	"context"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/job"
+	"github.com/butter-bot-machines/skylark/pkg/logging"
+	"github.com/butter-bot-machines/skylark/pkg/process"
+	"github.com/butter-bot-machines/skylark/pkg/timing"
 )
 
 // Pool represents a worker pool for processing jobs
@@ -19,6 +23,8 @@ type Pool struct {
 	stats         *Stats
 	limits        ResourceLimits
 	queueWrappers sync.WaitGroup // Track wrapper goroutines
+	logger        logging.Logger
+	procMgr       process.Manager
 }
 
 // Stats tracks worker pool statistics
@@ -33,17 +39,38 @@ type worker struct {
 	pool *Pool
 }
 
+// Options configures a worker pool
+type Options struct {
+	Config    config.Store
+	Logger    logging.Logger
+	ProcMgr   process.Manager
+	QueueSize int
+	Workers   int
+}
+
 // NewPool creates a new worker pool
-func NewPool(cfg *config.Config) *Pool {
+func NewPool(opts Options) (*Pool, error) {
+	if opts.Config == nil {
+		return nil, fmt.Errorf("config store required")
+	}
+	if opts.Logger == nil {
+		return nil, fmt.Errorf("logger required")
+	}
+	if opts.ProcMgr == nil {
+		return nil, fmt.Errorf("process manager required")
+	}
+
 	p := &Pool{
-		jobQueue: make(chan job.Job, cfg.Workers.QueueSize),
+		jobQueue: make(chan job.Job, opts.QueueSize),
 		done:     make(chan struct{}),
 		stats:    &Stats{},
 		limits:   DefaultLimits(),
+		logger:   opts.Logger.WithGroup("worker"),
+		procMgr:  opts.ProcMgr,
 	}
 
-	p.workers = make([]*worker, cfg.Workers.Count)
-	for i := 0; i < cfg.Workers.Count; i++ {
+	p.workers = make([]*worker, opts.Workers)
+	for i := 0; i < opts.Workers; i++ {
 		w := &worker{
 			id:   i,
 			pool: p,
@@ -53,6 +80,16 @@ func NewPool(cfg *config.Config) *Pool {
 		go w.start()
 	}
 
+	p.logger.Info("worker pool started",
+		"workers", opts.Workers,
+		"queue_size", opts.QueueSize)
+
+	return p, nil
+}
+
+// WithClock sets a custom clock for the worker pool
+func (p *Pool) WithClock(clock timing.Clock) *Pool {
+	p.limits = p.limits.WithClock(clock)
 	return p
 }
 
@@ -73,6 +110,9 @@ func (p *Pool) Queue() chan<- job.Job {
 					return
 				}
 				atomic.AddUint64(&p.stats.QueuedJobs, 1)
+				p.logger.Debug("job queued",
+					"queued_jobs", atomic.LoadUint64(&p.stats.QueuedJobs))
+
 				// Try to send the job, but give up if pool is shutting down
 				select {
 				case <-p.done:
@@ -94,66 +134,97 @@ func (p *Pool) Stats() Stats {
 	}
 }
 
-// IncrementStats atomically increments a stats counter
-func IncrementStats(p *Pool, counter *uint64) {
-	atomic.AddUint64(counter, 1)
-}
-
-// GetStats atomically reads a stats counter
-func GetStats(p *Pool, counter *uint64) uint64 {
-	return atomic.LoadUint64(counter)
-}
-
 // Stop gracefully shuts down the worker pool
 func (p *Pool) Stop() {
-	close(p.done)           // Signal all goroutines to stop
-	p.queueWrappers.Wait()  // Wait for queue wrapper goroutines to finish
-	close(p.jobQueue)       // Close the job queue
+	p.logger.Info("stopping worker pool")
+	close(p.done)          // Signal all goroutines to stop
+	p.queueWrappers.Wait() // Wait for queue wrapper goroutines to finish
+	close(p.jobQueue)      // Close the job queue
 	p.wg.Wait()            // Wait for all workers to finish
+	p.logger.Info("worker pool stopped")
 }
 
 func (w *worker) start() {
 	defer w.pool.wg.Done()
-
-	// Set memory limit for this worker
-	enforceMemoryLimit(w.pool.limits.MaxMemory)
+	logger := w.pool.logger.WithGroup(fmt.Sprintf("worker-%d", w.id))
+	logger.Info("worker started")
 
 	for {
 		select {
 		case <-w.pool.done:
+			logger.Info("worker stopping")
 			return
 		case job, ok := <-w.pool.jobQueue:
 			if !ok {
+				logger.Info("worker stopping (queue closed)")
 				return
 			}
 
-			// Create context with timeout for job execution
-			ctx, cancel := context.WithTimeout(context.Background(), w.pool.limits.MaxCPUTime)
+			logger.Debug("processing job")
 
-			// Run job with resource limits
-			err := runWithCPULimit(ctx, w.pool.limits.MaxCPUTime, func() error {
-				// Set memory limit for this goroutine
-				enforceMemoryLimit(w.pool.limits.MaxMemory)
-				return job.Process()
-			})
-
-			// Check if error is from resource limit
-			if err != nil && (strings.Contains(err.Error(), "CPU limit exceeded") || strings.Contains(err.Error(), "out of memory")) {
-				job.OnFailure(err)
+			// Create process with resource limits
+			proc := w.pool.procMgr.New("worker", []string{fmt.Sprintf("%d", w.id)})
+			if err := proc.SetLimits(process.ResourceLimits{
+				MaxCPUTime:    w.pool.limits.MaxCPUTime,
+				MaxMemoryMB:   w.pool.limits.MaxMemory / (1024 * 1024), // Convert bytes to MB
+				MaxFileSizeMB: w.pool.limits.MaxFileSize / (1024 * 1024),
+				MaxFiles:      w.pool.limits.MaxFiles,
+				MaxProcesses:  w.pool.limits.MaxProcesses,
+			}); err != nil {
+				logger.Error("failed to set resource limits", "error", err)
 				atomic.AddUint64(&w.pool.stats.FailedJobs, 1)
+				job.OnFailure(err)
 				continue
 			}
 
-			// Clean up
-			cancel()
-
-			if err != nil {
+			// Start the process
+			if err := proc.Start(); err != nil {
+				logger.Error("failed to start process", "error", err)
 				atomic.AddUint64(&w.pool.stats.FailedJobs, 1)
 				job.OnFailure(err)
+				continue
 			}
-			atomic.AddUint64(&w.pool.stats.ProcessedJobs, 1)
+
+			// Run the job
+			logger.Debug("running job")
+			jobErr := job.Process()
+			logger.Debug("job process returned", "error", jobErr)
+
+			// Signal process completion
+			logger.Debug("signaling process completion")
+			if err := proc.Signal(os.Interrupt); err != nil {
+				logger.Error("failed to signal process", "error", err)
+			}
+
+			// Wait for process completion
+			logger.Debug("waiting for process completion")
+			waitErr := proc.Wait()
+			logger.Debug("process wait returned", "error", waitErr)
+
+			// Handle errors and update stats
+			if jobErr != nil {
+				logger.Error("job failed", "error", jobErr)
+				atomic.AddUint64(&w.pool.stats.FailedJobs, 1)
+				job.OnFailure(jobErr)
+			} else if waitErr != nil {
+				// Process failed, check if it was a resource limit
+				if strings.Contains(waitErr.Error(), "CPU limit exceeded") || strings.Contains(waitErr.Error(), "out of memory") {
+					logger.Warn("job failed (resource limit)", "error", waitErr)
+					atomic.AddUint64(&w.pool.stats.FailedJobs, 1)
+					job.OnFailure(waitErr)
+				}
+			} else {
+				logger.Debug("job and process completed successfully")
+				atomic.AddUint64(&w.pool.stats.ProcessedJobs, 1)
+				logger.Debug("stats updated",
+					"processed_jobs", atomic.LoadUint64(&w.pool.stats.ProcessedJobs),
+					"failed_jobs", atomic.LoadUint64(&w.pool.stats.FailedJobs))
+			}
+
 			// Decrement queued jobs counter
-			atomic.AddUint64(&w.pool.stats.QueuedJobs, ^uint64(0)) // This is equivalent to subtracting 1
+			atomic.AddUint64(&w.pool.stats.QueuedJobs, ^uint64(0))
+			logger.Debug("queued jobs decremented",
+				"queued_jobs", atomic.LoadUint64(&w.pool.stats.QueuedJobs))
 		}
 	}
 }

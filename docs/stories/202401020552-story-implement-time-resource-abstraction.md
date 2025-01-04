@@ -35,7 +35,13 @@ This means:
 
 ## Solution
 
-1. Create Time Interface:
+After evaluating options for time mocking, we'll use benbjohnson/clock which provides:
+- A well-tested Clock interface that mimics Go's time package
+- Both real and mock implementations
+- Proper handling of timers and tickers
+- Avoidance of common pitfalls in time mocking
+
+1. Create Time Interface wrapping benbjohnson/clock:
 ```go
 // pkg/timing/interface.go
 type Clock interface {
@@ -52,6 +58,7 @@ type Clock interface {
     NewTicker(d time.Duration) Ticker
 }
 
+// Timer and Ticker interfaces match benbjohnson/clock
 type Timer interface {
     C() <-chan time.Time
     Stop() bool
@@ -61,6 +68,16 @@ type Timer interface {
 type Ticker interface {
     C() <-chan time.Time
     Stop()
+}
+
+// New returns a real clock implementation
+func New() Clock {
+    return clock.New()
+}
+
+// NewMock returns a mock clock for testing
+func NewMock() Clock {
+    return clock.NewMock()
 }
 ```
 
@@ -92,98 +109,39 @@ type ResourceLimits struct {
 }
 ```
 
-3. Add Production Implementation:
+3. Example Usage:
 ```go
-// pkg/timing/real/clock.go
-type RealClock struct{}
-
-func (c *RealClock) Now() time.Time {
-    return time.Now()
-}
-
-func (c *RealClock) NewTimer(d time.Duration) Timer {
-    return &realTimer{time.NewTimer(d)}
-}
-
-// pkg/resources/real/controller.go
-type RealController struct {
-    limits ResourceLimits
-}
-
-func (c *RealController) SetMemoryLimit(bytes int64) error {
-    debug.SetMemoryLimit(bytes)
-    return nil
-}
-```
-
-4. Add Test Implementation:
-```go
-// pkg/timing/mock/clock.go
-type MockClock struct {
-    now    time.Time
-    timers []*mockTimer
-    mu     sync.Mutex
-}
-
-func (c *MockClock) Advance(d time.Duration) {
-    c.mu.Lock()
-    defer c.mu.Unlock()
-    
-    c.now = c.now.Add(d)
-    for _, t := range c.timers {
-        t.tryFire(c.now)
-    }
-}
-
-// pkg/resources/mock/controller.go
-type MockController struct {
-    memory   int64
-    cpu      float64
-    threads  int
-    profiling bool
-}
-
-func (c *MockController) SetMemoryLimit(bytes int64) error {
-    c.memory = bytes
-    return nil
-}
-```
-
-5. Update Components:
-```go
-// pkg/watcher/debouncer.go
-type Debouncer struct {
-    clock  timing.Clock
-    timers map[string]timing.Timer
-}
-
-func (d *Debouncer) Debounce(key string, callback func()) {
-    if timer, exists := d.timers[key]; exists {
-        timer.Stop()
-    }
-    
-    d.timers[key] = d.clock.AfterFunc(d.delay, callback)
-}
-
-// pkg/worker/limits.go
+// Production code
 type Worker struct {
+    clock timing.Clock
     resources resources.ResourceController
-    limits    ResourceLimits
 }
 
-func (w *Worker) enforceResourceLimits() error {
-    if err := w.resources.SetMemoryLimit(w.limits.MaxMemory); err != nil {
-        return err
+func NewWorker() *Worker {
+    return &Worker{
+        clock: timing.New(), // Uses real clock
+        resources: resources.New(),
     }
-    return w.resources.SetCPULimit(w.limits.MaxCPU)
+}
+
+// Test code
+func TestWorker(t *testing.T) {
+    mock := timing.NewMock()
+    w := &Worker{
+        clock: mock,
+        resources: resources.NewMock(),
+    }
+    
+    // Control time in tests
+    mock.Add(5 * time.Second)
 }
 ```
 
 ## Benefits
 
 1. Testing:
-   - Control time flow
-   - Simulate delays
+   - Control time flow using proven library
+   - Simulate delays reliably
    - Mock resources
    - Fast execution
 
@@ -202,19 +160,20 @@ func (w *Worker) enforceResourceLimits() error {
 ## Implementation
 
 1. Core Changes:
-   - Create timing package
+   - Add benbjohnson/clock dependency
+   - Create timing package wrapping clock
    - Create resources package
    - Add interfaces
    - Add implementations
 
 2. Component Updates:
-   - Update debouncer
-   - Update worker
-   - Update processor
-   - Update sandbox
+   - Update debouncer to use Clock
+   - Update worker to use Clock
+   - Update processor to use Clock
+   - Update sandbox to use ResourceController
 
 3. Test Support:
-   - Add mock clock
+   - Use mock clock from benbjohnson/clock
    - Add mock resources
    - Update test helpers
    - Add examples
@@ -228,7 +187,7 @@ func (w *Worker) enforceResourceLimits() error {
    - [ ] Proper cleanup
 
 2. Testing:
-   - [ ] Tests control time
+   - [ ] Tests control time via benbjohnson/clock
    - [ ] Tests control resources
    - [ ] Fast execution
    - [ ] No flakiness
@@ -238,3 +197,12 @@ func (w *Worker) enforceResourceLimits() error {
    - [ ] Implementation docs
    - [ ] Test patterns
    - [ ] Examples
+
+## Technical Notes
+
+We chose benbjohnson/clock over implementing our own solution because:
+1. It's a mature, well-tested library
+2. It properly handles edge cases in time mocking
+3. It closely mimics Go's time package behavior
+4. It avoids common pitfalls like goroutine scheduling issues
+5. It reduces maintenance burden vs custom implementation

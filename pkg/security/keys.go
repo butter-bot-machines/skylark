@@ -36,12 +36,6 @@ type Key struct {
 	AccessMask uint32    `json:"access_mask"`
 }
 
-// KeyConfig represents key configuration options
-type KeyConfig struct {
-	EncryptionKey string // Base64 encoded 32-byte key for AES-256
-	StoragePath   string // Path to key storage file
-}
-
 const (
 	// Access level bits
 	AccessRead   uint32 = 1 << iota // Read operations

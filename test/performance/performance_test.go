@@ -2,6 +2,7 @@ package performance
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,8 +12,51 @@ import (
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/config/memory"
+	"github.com/butter-bot-machines/skylark/pkg/logging"
+	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
+	"github.com/butter-bot-machines/skylark/pkg/process"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
 )
+
+// mockProcessManager implements a minimal process manager for testing
+type mockProcessManager struct {
+	defaultLimits process.ResourceLimits
+}
+
+func (m *mockProcessManager) New(name string, args []string) process.Process {
+	return &mockProcess{}
+}
+
+func (m *mockProcessManager) Get(pid int) (process.Process, error) {
+	return &mockProcess{}, nil
+}
+
+func (m *mockProcessManager) List() []process.Process {
+	return []process.Process{&mockProcess{}}
+}
+
+func (m *mockProcessManager) SetDefaultLimits(limits process.ResourceLimits) {
+	m.defaultLimits = limits
+}
+
+func (m *mockProcessManager) GetDefaultLimits() process.ResourceLimits {
+	return m.defaultLimits
+}
+
+type mockProcess struct{}
+
+func (p *mockProcess) Start() error                        { return nil }
+func (p *mockProcess) Wait() error                        { return nil }
+func (p *mockProcess) Signal(os.Signal) error             { return nil }
+func (p *mockProcess) SetStdin(io.Reader)                 {}
+func (p *mockProcess) SetStdout(io.Writer)                {}
+func (p *mockProcess) SetStderr(io.Writer)                {}
+func (p *mockProcess) SetLimits(process.ResourceLimits) error { return nil }
+func (p *mockProcess) GetLimits() process.ResourceLimits      { return process.ResourceLimits{} }
+func (p *mockProcess) ID() int                            { return 0 }
+func (p *mockProcess) Running() bool                      { return false }
+func (p *mockProcess) ExitCode() int                      { return 0 }
 
 // BenchmarkWorkerPool measures worker pool performance under load
 func BenchmarkWorkerPool(b *testing.B) {
@@ -20,15 +64,35 @@ func BenchmarkWorkerPool(b *testing.B) {
 	b.SetParallelism(1)
 	b.ReportAllocs()
 
-	// Test with a single configuration
+	// Create test config
 	cfg := &config.Config{
 		Workers: config.WorkerConfig{
 			Count:     4,
 			QueueSize: 1000,
 		},
 	}
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		b.Fatalf("Failed to set config: %v", err)
+	}
 
-	pool := worker.NewPool(cfg)
+	// Create logger
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+
+	// Create process manager
+	procMgr := &mockProcessManager{}
+
+	// Create worker pool
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		b.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	var wg sync.WaitGroup
@@ -74,14 +138,35 @@ func BenchmarkFileProcessing(b *testing.B) {
 		}
 	}
 
+	// Create test config
 	cfg := &config.Config{
 		Workers: config.WorkerConfig{
 			Count:     runtime.NumCPU(),
 			QueueSize: 1000,
 		},
 	}
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		b.Fatalf("Failed to set config: %v", err)
+	}
 
-	pool := worker.NewPool(cfg)
+	// Create logger
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+
+	// Create process manager
+	procMgr := &mockProcessManager{}
+
+	// Create worker pool
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		b.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	b.ResetTimer()
@@ -114,14 +199,35 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 		t.Skip("Skipping concurrency test in short mode")
 	}
 
+	// Create test config
 	cfg := &config.Config{
 		Workers: config.WorkerConfig{
 			Count:     8,
 			QueueSize: 1000,
 		},
 	}
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
 
-	pool := worker.NewPool(cfg)
+	// Create logger
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+
+	// Create process manager
+	procMgr := &mockProcessManager{}
+
+	// Create worker pool
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Track completed jobs

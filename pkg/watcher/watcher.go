@@ -35,7 +35,7 @@ func New(cfg *config.Config, jobQueue chan<- job.Job, proc *processor.Processor)
 		fsWatcher: fsWatcher,
 		jobQueue:  jobQueue,
 		processor: proc,
-		debouncer: newDebouncer(cfg.FileWatch.DebounceDelay, cfg.FileWatch.MaxDelay),
+		debouncer: newDebouncer(cfg.FileWatch.DebounceDelay, cfg.FileWatch.MaxDelay, nil), // Use default real clock
 		done:      make(chan struct{}),
 	}
 

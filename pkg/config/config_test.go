@@ -98,11 +98,12 @@ file_watch:
 	}
 
 	// Test worker config
-	if manager.Get().Workers.Count != 4 {
-		t.Errorf("Expected worker count 4, got %d", manager.Get().Workers.Count)
+	cfg := manager.GetConfig()
+	if cfg.Workers.Count != 4 {
+		t.Errorf("Expected worker count 4, got %d", cfg.Workers.Count)
 	}
-	if manager.Get().Workers.QueueSize != 100 {
-		t.Errorf("Expected queue size 100, got %d", manager.Get().Workers.QueueSize)
+	if cfg.Workers.QueueSize != 100 {
+		t.Errorf("Expected queue size 100, got %d", cfg.Workers.QueueSize)
 	}
 }
 
@@ -117,7 +118,7 @@ func TestConfigSaving(t *testing.T) {
 			LogLevel: "info",
 			LogFile:  "test.log",
 		},
-		Models: map[string]map[string]ModelConfig{
+		Models: map[string]ModelConfigSet{
 			"openai": {
 				"gpt-4": {
 					APIKey:      "sk-test",
@@ -137,7 +138,7 @@ func TestConfigSaving(t *testing.T) {
 
 	// Create manager and save config
 	manager := NewManager(tmpDir)
-	manager.Set(config)
+	manager.SetConfig(config)
 	err := manager.Save()
 	if err != nil {
 		t.Fatalf("Failed to save config: %v", err)
@@ -151,7 +152,7 @@ func TestConfigSaving(t *testing.T) {
 	}
 
 	// Verify loaded config matches original
-	loadedConfig := newManager.Get()
+	loadedConfig := newManager.GetConfig()
 	if loadedConfig.Version != config.Version {
 		t.Errorf("Expected version '%s', got '%s'", config.Version, loadedConfig.Version)
 	}
@@ -185,7 +186,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "valid config",
 			config: &Config{
 				Version: "1.0",
-				Models: map[string]map[string]ModelConfig{
+				Models: map[string]ModelConfigSet{
 					"openai": {
 						"gpt-4": {
 							APIKey: "sk-test",
@@ -198,7 +199,7 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "missing version",
 			config: &Config{
-				Models: map[string]map[string]ModelConfig{
+				Models: map[string]ModelConfigSet{
 					"openai": {
 						"gpt-4": {
 							APIKey: "sk-test",
@@ -212,7 +213,7 @@ func TestConfigValidation(t *testing.T) {
 			name: "missing API key",
 			config: &Config{
 				Version: "1.0",
-				Models: map[string]map[string]ModelConfig{
+				Models: map[string]ModelConfigSet{
 					"openai": {
 						"gpt-4": {},
 					},

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
 func TestFileGuard(t *testing.T) {
@@ -42,8 +43,8 @@ func TestFileGuard(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		Security: config.SecurityConfig{
-			FilePermissions: config.FilePermissionsConfig{
+		Security: types.SecurityConfig{
+			FilePermissions: types.FilePermissionsConfig{
 				AllowedPaths:  []string{allowedDir},
 				BlockedPaths:  []string{blockedDir},
 				AllowSymlinks: false,
@@ -218,8 +219,8 @@ func TestFileGuardErrors(t *testing.T) {
 	// Test invalid config paths
 	t.Run("invalid config paths", func(t *testing.T) {
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
-				FilePermissions: config.FilePermissionsConfig{
+			Security: types.SecurityConfig{
+				FilePermissions: types.FilePermissionsConfig{
 					AllowedPaths: []string{string([]byte{0x7f})}, // Invalid path character (DEL)
 				},
 			},
@@ -242,8 +243,8 @@ func TestFileGuardErrors(t *testing.T) {
 	t.Run("non-existent paths", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cfg := &config.Config{
-			Security: config.SecurityConfig{
-				FilePermissions: config.FilePermissionsConfig{
+			Security: types.SecurityConfig{
+				FilePermissions: types.FilePermissionsConfig{
 					AllowedPaths: []string{tmpDir},
 					MaxFileSize:  1024,
 				},

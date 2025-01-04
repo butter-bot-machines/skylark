@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
 var (
@@ -22,7 +23,7 @@ var (
 // FileGuard manages file access controls
 type FileGuard struct {
 	mu            sync.RWMutex
-	config        config.FilePermissionsConfig
+	config        types.FilePermissionsConfig
 	auditLog      *AuditLog
 	allowedPaths  []string // Normalized absolute paths
 	blockedPaths  []string // Normalized absolute paths

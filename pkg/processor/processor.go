@@ -11,9 +11,12 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/parser"
+	"github.com/butter-bot-machines/skylark/pkg/process"
+	procesos "github.com/butter-bot-machines/skylark/pkg/process/os"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
 	"github.com/butter-bot-machines/skylark/pkg/provider/openai"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
+	"github.com/butter-bot-machines/skylark/pkg/timing"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
 
@@ -36,6 +39,7 @@ type Processor struct {
 	config     *config.Config
 	assistants *assistant.Manager
 	parser     *parser.Parser
+	ProcMgr    process.Manager // Expose for worker pool
 }
 
 // New creates a new processor
@@ -53,8 +57,8 @@ func New(cfg *config.Config) (*Processor, error) {
 		return nil, fmt.Errorf("OpenAI GPT-4 configuration not found")
 	}
 
-	// Create OpenAI provider
-	p, err = openai.New("gpt-4", modelConfig)
+	// Create OpenAI provider with default options
+	p, err = openai.New("gpt-4", modelConfig, openai.Options{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OpenAI provider: %w", err)
 	}
@@ -82,10 +86,14 @@ func New(cfg *config.Config) (*Processor, error) {
 		return nil, fmt.Errorf("failed to create assistant manager: %w", err)
 	}
 
+	// Create process manager with system clock
+	procMgr := procesos.NewManager(timing.New())
+
 	return &Processor{
 		config:     cfg,
 		assistants: assistantMgr,
 		parser:     parser.New(),
+		ProcMgr:    procMgr,
 	}, nil
 }
 

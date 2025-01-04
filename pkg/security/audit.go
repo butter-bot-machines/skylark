@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
 // EventType represents the type of security event
@@ -63,7 +64,7 @@ type AuditEvent struct {
 // AuditLog manages security event logging
 type AuditLog struct {
 	mu       sync.Mutex
-	config   config.AuditLogConfig
+	config   types.AuditLogConfig
 	file     *os.File
 	buffer   []*AuditEvent
 	lastFlush time.Time

@@ -1,16 +1,60 @@
 package integration
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/config/memory"
+	"github.com/butter-bot-machines/skylark/pkg/logging"
+	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
+	"github.com/butter-bot-machines/skylark/pkg/process"
 	"github.com/butter-bot-machines/skylark/pkg/watcher"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
 	"github.com/butter-bot-machines/skylark/test/testutil"
 )
+
+// mockProcessManager implements a minimal process manager for testing
+type mockProcessManager struct {
+	defaultLimits process.ResourceLimits
+}
+
+func (m *mockProcessManager) New(name string, args []string) process.Process {
+	return &mockProcess{}
+}
+
+func (m *mockProcessManager) Get(pid int) (process.Process, error) {
+	return &mockProcess{}, nil
+}
+
+func (m *mockProcessManager) List() []process.Process {
+	return []process.Process{&mockProcess{}}
+}
+
+func (m *mockProcessManager) SetDefaultLimits(limits process.ResourceLimits) {
+	m.defaultLimits = limits
+}
+
+func (m *mockProcessManager) GetDefaultLimits() process.ResourceLimits {
+	return m.defaultLimits
+}
+
+type mockProcess struct{}
+
+func (p *mockProcess) Start() error                        { return nil }
+func (p *mockProcess) Wait() error                        { return nil }
+func (p *mockProcess) Signal(os.Signal) error             { return nil }
+func (p *mockProcess) SetStdin(io.Reader)                 {}
+func (p *mockProcess) SetStdout(io.Writer)                {}
+func (p *mockProcess) SetStderr(io.Writer)                {}
+func (p *mockProcess) SetLimits(process.ResourceLimits) error { return nil }
+func (p *mockProcess) GetLimits() process.ResourceLimits      { return process.ResourceLimits{} }
+func (p *mockProcess) ID() int                            { return 0 }
+func (p *mockProcess) Running() bool                      { return false }
+func (p *mockProcess) ExitCode() int                      { return 0 }
 
 // TestWatcherWorkerIntegration tests the integration between file watcher and worker pool
 func TestWorkerPool(t *testing.T) {
@@ -21,7 +65,24 @@ func TestWorkerPool(t *testing.T) {
 		},
 	}
 
-	pool := worker.NewPool(cfg)
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{}
+
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Create and queue a test job
@@ -95,8 +156,25 @@ func TestWatcherWorkerIntegration(t *testing.T) {
 		},
 	}
 
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{}
+
 	// Create worker pool
-	pool := worker.NewPool(cfg)
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Create mock processor
@@ -147,8 +225,25 @@ func TestAssistantIntegration(t *testing.T) {
 		},
 	}
 
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{}
+
 	// Create worker pool
-	pool := worker.NewPool(cfg)
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Create test assistant
@@ -237,8 +332,25 @@ func TestCommandInvalidation(t *testing.T) {
 		},
 	}
 
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{}
+
 	// Create worker pool
-	pool := worker.NewPool(cfg)
+	pool, err := worker.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Create mock processor

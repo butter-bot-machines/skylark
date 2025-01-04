@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/job"
 	"github.com/butter-bot-machines/skylark/pkg/logging"
+	slogging "github.com/butter-bot-machines/skylark/pkg/logging/slog"
 	"github.com/butter-bot-machines/skylark/pkg/processor"
 	"github.com/butter-bot-machines/skylark/pkg/watcher"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
@@ -21,13 +21,13 @@ const Version = "0.1.0"
 // CLI represents the command-line interface
 type CLI struct {
 	config *config.Manager
-	logger *slog.Logger
+	logger logging.Logger
 }
 
 // NewCLI creates a new CLI instance
 func NewCLI() *CLI {
 	return &CLI{
-		logger: logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
+		logger: slogging.NewLogger(logging.LevelDebug, os.Stdout),
 	}
 }
 
@@ -176,18 +176,27 @@ func (c *CLI) Watch(args []string) error {
 		"timeout", timeout)
 
 	// Create processor
-	proc, err := processor.New(c.config.Get())
+	proc, err := processor.New(c.config.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
 
 	// Create worker pool
-	cfg := c.config.Get()
+	cfg := c.config.GetConfig()
 	c.logger.Debug("creating worker pool",
 		"worker_count", cfg.Workers.Count,
 		"queue_size", cfg.Workers.QueueSize)
 
-	pool := worker.NewPool(cfg)
+	pool, err := worker.NewPool(worker.Options{
+		Config:    c.config,
+		Logger:    c.logger,
+		ProcMgr:   proc.ProcMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %w", err)
+	}
 	defer pool.Stop()
 
 	// Create channels
@@ -273,18 +282,27 @@ func (c *CLI) RunOnce(args []string) error {
 	c.logger.Info("starting run command")
 
 	// Create processor
-	proc, err := processor.New(c.config.Get())
+	proc, err := processor.New(c.config.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
 
 	// Create worker pool
-	cfg := c.config.Get()
+	cfg := c.config.GetConfig()
 	c.logger.Debug("creating worker pool",
 		"worker_count", cfg.Workers.Count,
 		"queue_size", cfg.Workers.QueueSize)
 
-	pool := worker.NewPool(cfg)
+	pool, err := worker.NewPool(worker.Options{
+		Config:    c.config,
+		Logger:    c.logger,
+		ProcMgr:   proc.ProcMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %w", err)
+	}
 	defer pool.Stop()
 
 	// Track progress
