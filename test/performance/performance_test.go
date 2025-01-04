@@ -17,6 +17,7 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
 	"github.com/butter-bot-machines/skylark/pkg/process"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	"github.com/butter-bot-machines/skylark/pkg/worker/concrete"
 )
 
 // mockProcessManager implements a minimal process manager for testing
@@ -83,7 +84,7 @@ func BenchmarkWorkerPool(b *testing.B) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := concrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -157,7 +158,7 @@ func BenchmarkFileProcessing(b *testing.B) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := concrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -218,7 +219,7 @@ func TestWorkerPoolConcurrency(t *testing.T) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := concrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,

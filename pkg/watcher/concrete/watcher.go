@@ -1,4 +1,4 @@
-package watcher
+package concrete
 
 import (
 	"fmt"
@@ -9,29 +9,41 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/job"
 	"github.com/butter-bot-machines/skylark/pkg/processor"
+	"github.com/butter-bot-machines/skylark/pkg/watcher"
 	"github.com/fsnotify/fsnotify"
 )
 
-// Watcher monitors files for changes
-type Watcher struct {
+// watcherImpl implements watcher.FileWatcher
+type watcherImpl struct {
 	fsWatcher *fsnotify.Watcher
 	jobQueue  chan<- job.Job
-	debouncer *Debouncer
-	processor *processor.Processor
+	debouncer watcher.Debouncer
+	processor processor.ProcessManager
 	done      chan struct{}
 	wg        sync.WaitGroup
 	stopped   bool
 	mu        sync.Mutex
 }
 
-// New creates a new file watcher
-func New(cfg *config.Config, jobQueue chan<- job.Job, proc *processor.Processor) (*Watcher, error) {
+// NewWatcher creates a new file watcher
+func NewWatcher(cfg *config.Config, jobQueue chan<- job.Job, proc processor.ProcessManager) (watcher.FileWatcher, error) {
+	// Validate inputs
+	if cfg == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	if jobQueue == nil {
+		return nil, fmt.Errorf("job queue is required")
+	}
+	if proc == nil {
+		return nil, fmt.Errorf("processor is required")
+	}
+
 	fsWatcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create watcher: %w", err)
 	}
 
-	w := &Watcher{
+	w := &watcherImpl{
 		fsWatcher: fsWatcher,
 		jobQueue:  jobQueue,
 		processor: proc,
@@ -58,7 +70,7 @@ func New(cfg *config.Config, jobQueue chan<- job.Job, proc *processor.Processor)
 }
 
 // Stop stops the watcher
-func (w *Watcher) Stop() error {
+func (w *watcherImpl) Stop() error {
 	w.mu.Lock()
 	if w.stopped {
 		w.mu.Unlock()
@@ -73,7 +85,7 @@ func (w *Watcher) Stop() error {
 	return w.fsWatcher.Close()
 }
 
-func (w *Watcher) watch() {
+func (w *watcherImpl) watch() {
 	defer w.wg.Done()
 
 	for {
@@ -101,7 +113,7 @@ func (w *Watcher) watch() {
 	}
 }
 
-func (w *Watcher) handleEvent(event fsnotify.Event) {
+func (w *watcherImpl) handleEvent(event fsnotify.Event) {
 	// Create job from event using NewFileChangeJob
 	j := job.NewFileChangeJob(event.Name, w.processor)
 

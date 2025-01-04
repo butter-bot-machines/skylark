@@ -1,4 +1,4 @@
-package security
+package concrete
 
 import (
 	"crypto/aes"
@@ -15,15 +15,23 @@ import (
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security"
 )
 
-// KeyStore manages API keys and their secure storage
-type KeyStore struct {
-	mu       sync.RWMutex
-	keys     map[string]Key
-	filepath string
-	cipher   cipher.AEAD
-}
+var (
+	ErrKeyNotFound      = errors.New("key not found")
+	ErrKeyExpired       = errors.New("key expired")
+	ErrInvalidAccess    = errors.New("invalid access level")
+	ErrInvalidKey       = errors.New("invalid key format")
+	ErrStorageCorrupted = errors.New("key storage corrupted")
+)
+
+const (
+	// Access level bits
+	AccessRead   uint32 = 1 << iota // Read operations
+	AccessWrite                     // Write operations
+	AccessAdmin                     // Administrative operations
+)
 
 // Key represents an API key with metadata
 type Key struct {
@@ -36,23 +44,16 @@ type Key struct {
 	AccessMask uint32    `json:"access_mask"`
 }
 
-const (
-	// Access level bits
-	AccessRead   uint32 = 1 << iota // Read operations
-	AccessWrite                     // Write operations
-	AccessAdmin                     // Administrative operations
-)
-
-var (
-	ErrKeyNotFound      = errors.New("key not found")
-	ErrKeyExpired       = errors.New("key expired")
-	ErrInvalidAccess    = errors.New("invalid access level")
-	ErrInvalidKey       = errors.New("invalid key format")
-	ErrStorageCorrupted = errors.New("key storage corrupted")
-)
+// keyStore implements security.KeyStore
+type keyStore struct {
+	mu       sync.RWMutex
+	keys     map[string]Key
+	filepath string
+	cipher   cipher.AEAD
+}
 
 // NewKeyStore creates a new key store
-func NewKeyStore(cfg *config.Config) (*KeyStore, error) {
+func NewKeyStore(cfg *config.Config) (security.KeyStore, error) {
 	// Decode encryption key
 	encKey, err := base64.StdEncoding.DecodeString(cfg.Security.EncryptionKey)
 	if err != nil || len(encKey) != 32 {
@@ -77,7 +78,7 @@ func NewKeyStore(cfg *config.Config) (*KeyStore, error) {
 		return nil, fmt.Errorf("failed to create storage directory: %w", err)
 	}
 
-	ks := &KeyStore{
+	ks := &keyStore{
 		keys:     make(map[string]Key),
 		filepath: cfg.Security.KeyStoragePath,
 		cipher:   gcm,
@@ -91,38 +92,8 @@ func NewKeyStore(cfg *config.Config) (*KeyStore, error) {
 	return ks, nil
 }
 
-// AddKey adds a new API key
-func (ks *KeyStore) AddKey(name, keyType string, value string, accessMask uint32, expiry *time.Time) error {
-	ks.mu.Lock()
-	defer ks.mu.Unlock()
-
-	// Validate key
-	if name == "" || keyType == "" || value == "" {
-		return ErrInvalidKey
-	}
-
-	// Create key entry
-	key := Key{
-		Value:      value,
-		Name:       name,
-		Type:       keyType,
-		Created:    time.Now(),
-		LastUsed:   time.Now(),
-		AccessMask: accessMask,
-	}
-	if expiry != nil {
-		key.Expiry = *expiry
-	}
-
-	// Add to store
-	ks.keys[name] = key
-
-	// Save changes
-	return ks.save()
-}
-
-// GetKey retrieves an API key if valid
-func (ks *KeyStore) GetKey(name string, requiredAccess uint32) (string, error) {
+// Get implements security.KeyStore
+func (ks *keyStore) Get(name string) (string, error) {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 
@@ -136,15 +107,10 @@ func (ks *KeyStore) GetKey(name string, requiredAccess uint32) (string, error) {
 		return "", ErrKeyExpired
 	}
 
-	// Check access level
-	if key.AccessMask&requiredAccess != requiredAccess {
-		return "", ErrInvalidAccess
-	}
-
 	// Update last used time
 	key.LastUsed = time.Now()
 	ks.keys[name] = key
-	
+
 	// Save changes
 	if err := ks.save(); err != nil {
 		// Log error but don't fail the operation
@@ -154,8 +120,35 @@ func (ks *KeyStore) GetKey(name string, requiredAccess uint32) (string, error) {
 	return key.Value, nil
 }
 
-// RemoveKey removes an API key
-func (ks *KeyStore) RemoveKey(name string) error {
+// Set implements security.KeyStore
+func (ks *keyStore) Set(name, value string) error {
+	ks.mu.Lock()
+	defer ks.mu.Unlock()
+
+	// Validate key
+	if name == "" || value == "" {
+		return ErrInvalidKey
+	}
+
+	// Create or update key entry
+	key := Key{
+		Value:      value,
+		Name:       name,
+		Type:       "generic",
+		Created:    time.Now(),
+		LastUsed:   time.Now(),
+		AccessMask: AccessRead | AccessWrite,
+	}
+
+	// Add to store
+	ks.keys[name] = key
+
+	// Save changes
+	return ks.save()
+}
+
+// Delete implements security.KeyStore
+func (ks *keyStore) Delete(name string) error {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 
@@ -167,25 +160,26 @@ func (ks *KeyStore) RemoveKey(name string) error {
 	return ks.save()
 }
 
-// RotateKey rotates an API key to a new value
-func (ks *KeyStore) RotateKey(name, newValue string) error {
-	ks.mu.Lock()
-	defer ks.mu.Unlock()
+// List implements security.KeyStore
+func (ks *keyStore) List() []string {
+	ks.mu.RLock()
+	defer ks.mu.RUnlock()
 
-	key, ok := ks.keys[name]
-	if !ok {
-		return ErrKeyNotFound
+	names := make([]string, 0, len(ks.keys))
+	for name := range ks.keys {
+		names = append(names, name)
 	}
+	return names
+}
 
-	key.Value = newValue
-	key.LastUsed = time.Now()
-	ks.keys[name] = key
-
+// Close implements security.KeyStore
+func (ks *keyStore) Close() error {
 	return ks.save()
 }
 
-// load reads and decrypts the key store from disk
-func (ks *KeyStore) load() error {
+// Internal methods
+
+func (ks *keyStore) load() error {
 	// Read encrypted data
 	data, err := os.ReadFile(ks.filepath)
 	if err != nil {
@@ -215,8 +209,7 @@ func (ks *KeyStore) load() error {
 	return nil
 }
 
-// save encrypts and writes the key store to disk
-func (ks *KeyStore) save() error {
+func (ks *keyStore) save() error {
 	// Marshal to JSON
 	plaintext, err := json.Marshal(ks.keys)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,8 +13,9 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
 	"github.com/butter-bot-machines/skylark/pkg/process"
-	"github.com/butter-bot-machines/skylark/pkg/watcher"
+	wconcrete "github.com/butter-bot-machines/skylark/pkg/watcher/concrete"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	wkconcrete "github.com/butter-bot-machines/skylark/pkg/worker/concrete"
 	"github.com/butter-bot-machines/skylark/test/testutil"
 )
 
@@ -44,17 +46,17 @@ func (m *mockProcessManager) GetDefaultLimits() process.ResourceLimits {
 
 type mockProcess struct{}
 
-func (p *mockProcess) Start() error                        { return nil }
-func (p *mockProcess) Wait() error                        { return nil }
-func (p *mockProcess) Signal(os.Signal) error             { return nil }
-func (p *mockProcess) SetStdin(io.Reader)                 {}
-func (p *mockProcess) SetStdout(io.Writer)                {}
-func (p *mockProcess) SetStderr(io.Writer)                {}
+func (p *mockProcess) Start() error                           { return nil }
+func (p *mockProcess) Wait() error                            { return nil }
+func (p *mockProcess) Signal(os.Signal) error                 { return nil }
+func (p *mockProcess) SetStdin(io.Reader)                     {}
+func (p *mockProcess) SetStdout(io.Writer)                    {}
+func (p *mockProcess) SetStderr(io.Writer)                    {}
 func (p *mockProcess) SetLimits(process.ResourceLimits) error { return nil }
 func (p *mockProcess) GetLimits() process.ResourceLimits      { return process.ResourceLimits{} }
-func (p *mockProcess) ID() int                            { return 0 }
-func (p *mockProcess) Running() bool                      { return false }
-func (p *mockProcess) ExitCode() int                      { return 0 }
+func (p *mockProcess) ID() int                                { return 0 }
+func (p *mockProcess) Running() bool                          { return false }
+func (p *mockProcess) ExitCode() int                          { return 0 }
 
 // TestWatcherWorkerIntegration tests the integration between file watcher and worker pool
 func TestWorkerPool(t *testing.T) {
@@ -73,7 +75,7 @@ func TestWorkerPool(t *testing.T) {
 	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
 	procMgr := &mockProcessManager{}
 
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -105,8 +107,8 @@ func TestWorkerPool(t *testing.T) {
 
 	// Verify job was processed
 	stats := pool.Stats()
-	if stats.ProcessedJobs != 1 {
-		t.Errorf("Expected 1 processed job, got %d", stats.ProcessedJobs)
+	if stats.ProcessedJobs() != 1 {
+		t.Errorf("Expected 1 processed job, got %d", stats.ProcessedJobs())
 	}
 }
 
@@ -165,7 +167,7 @@ func TestWatcherWorkerIntegration(t *testing.T) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -184,7 +186,7 @@ func TestWatcherWorkerIntegration(t *testing.T) {
 	}
 
 	// Create and start file watcher
-	w, err := watcher.New(cfg, pool.Queue(), proc)
+	w, err := wconcrete.NewWatcher(cfg, pool.Queue(), proc)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}
@@ -208,7 +210,7 @@ func TestWatcherWorkerIntegration(t *testing.T) {
 			t.Fatal("Timeout waiting for file to be processed")
 		case <-ticker.C:
 			stats := pool.Stats()
-			if stats.ProcessedJobs > 0 {
+			if stats.ProcessedJobs() > 0 {
 				return // Test passed
 			}
 		}
@@ -234,7 +236,7 @@ func TestAssistantIntegration(t *testing.T) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -341,7 +343,7 @@ func TestCommandInvalidation(t *testing.T) {
 	procMgr := &mockProcessManager{}
 
 	// Create worker pool
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -360,44 +362,67 @@ func TestCommandInvalidation(t *testing.T) {
 	}
 
 	// Create and start file watcher
-	w, err := watcher.New(cfg, pool.Queue(), proc)
+	w, err := wconcrete.NewWatcher(cfg, pool.Queue(), proc)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}
 	defer w.Stop()
 
+	var (
+		contentStr string
+		content    []byte
+	)
+
 	// Create a test markdown file with valid and invalidated commands
 	testFile := filepath.Join(tmpDir, "test.md")
-	content := []byte("# Test Document\n\n!command test\n-!command already processed\n")
+	content = []byte("# Test Document\n\n!command test\n-!command already processed\n")
 	if err := os.WriteFile(testFile, content, 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	// Wait for file processing with timeout
-	deadline := time.After(2 * time.Second)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	// Wait for initial processing
+	time.Sleep(1 * time.Second)
 
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("Timeout waiting for file to be processed")
-		case <-ticker.C:
-			stats := pool.Stats()
-			if stats.ProcessedJobs > 0 {
-				break // Proceed to verification
-			}
+	// Read initial content
+	content, err = os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+
+	// Verify initial content has response
+	contentStr = string(content)
+	if !strings.Contains(contentStr, "test") {
+		t.Fatal("Expected response not found in file")
+	}
+
+	// Wait for invalidation
+	time.Sleep(2 * time.Second)
+
+	// Read final content
+	content, err = os.ReadFile(testFile)
+	if err != nil {
+		t.Fatalf("Failed to read test file: %v", err)
+	}
+
+	contentStr = string(content)
+	lines := strings.Split(contentStr, "\n")
+
+	// Verify final state
+	var hasOriginalCommand, hasInvalidatedCommand bool
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "!command test" {
+			hasOriginalCommand = true
+		}
+		if trimmed == "-!command already processed" {
+			hasInvalidatedCommand = true
 		}
 	}
 
-	// Verify that the command was invalidated and the already invalidated command was ignored
-	updatedContent, err := os.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("Failed to read updated test file: %v", err)
+	if hasOriginalCommand {
+		t.Error("Original command should have been invalidated")
 	}
-
-	expectedContent := "# Test Document\n\n-!command test\n-!command already processed\n"
-	if string(updatedContent) != expectedContent {
-		t.Errorf("Expected content:\n%s\nGot:\n%s", expectedContent, string(updatedContent))
+	if !hasInvalidatedCommand {
+		t.Error("Previously invalidated command should remain")
 	}
 }

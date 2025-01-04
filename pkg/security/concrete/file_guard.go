@@ -1,4 +1,4 @@
-package security
+package concrete
 
 import (
 	"errors"
@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/security"
 	"github.com/butter-bot-machines/skylark/pkg/security/types"
 )
 
@@ -20,11 +21,11 @@ var (
 	ErrBlockedPath      = errors.New("path is blocked")
 )
 
-// FileGuard manages file access controls
-type FileGuard struct {
+// fileGuard implements security.FileGuard
+type fileGuard struct {
 	mu            sync.RWMutex
 	config        types.FilePermissionsConfig
-	auditLog      *AuditLog
+	auditLog      security.AuditLogger
 	allowedPaths  []string // Normalized absolute paths
 	blockedPaths  []string // Normalized absolute paths
 	maxFileSize   int64
@@ -32,9 +33,10 @@ type FileGuard struct {
 }
 
 // NewFileGuard creates a new file access controller
-func NewFileGuard(cfg *config.Config, auditLog *AuditLog) (*FileGuard, error) {
-	guard := &FileGuard{
+func NewFileGuard(cfg *config.Config, auditLog security.AuditLogger) (security.FileGuard, error) {
+	guard := &fileGuard{
 		auditLog:      auditLog,
+		config:        cfg.Security.FilePermissions,
 		maxFileSize:   cfg.Security.FilePermissions.MaxFileSize,
 		allowSymlinks: cfg.Security.FilePermissions.AllowSymlinks,
 	}
@@ -68,8 +70,76 @@ func NewFileGuard(cfg *config.Config, auditLog *AuditLog) (*FileGuard, error) {
 	return guard, nil
 }
 
-// ValidateAccess checks if a file operation is allowed
-func (g *FileGuard) ValidateAccess(path string, info os.FileInfo) error {
+// CheckRead implements security.FileGuard
+func (g *fileGuard) CheckRead(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("failed to stat path: %w", err)
+	}
+	return g.validateAccess(path, info)
+}
+
+// CheckWrite implements security.FileGuard
+func (g *fileGuard) CheckWrite(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to stat path: %w", err)
+	}
+	if info != nil {
+		return g.validateAccess(path, info)
+	}
+	return g.validateWrite(path, 0)
+}
+
+// AddAllowedPath implements security.FileGuard
+func (g *fileGuard) AddAllowedPath(path string) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("invalid path: %w", err)
+	}
+	cleanPath := filepath.Clean(absPath)
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// Check if path is already blocked
+	for _, blocked := range g.blockedPaths {
+		if isSubPath(cleanPath, blocked) {
+			return fmt.Errorf("%w: path is blocked", ErrBlockedPath)
+		}
+	}
+
+	g.allowedPaths = append(g.allowedPaths, cleanPath)
+	return nil
+}
+
+// RemoveAllowedPath implements security.FileGuard
+func (g *fileGuard) RemoveAllowedPath(path string) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return
+	}
+	cleanPath := filepath.Clean(absPath)
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for i, allowed := range g.allowedPaths {
+		if allowed == cleanPath {
+			g.allowedPaths = append(g.allowedPaths[:i], g.allowedPaths[i+1:]...)
+			return
+		}
+	}
+}
+
+// Close implements security.FileGuard
+func (g *fileGuard) Close() error {
+	return nil
+}
+
+// Internal methods
+
+func (g *fileGuard) validateAccess(path string, info os.FileInfo) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -122,8 +192,7 @@ func (g *FileGuard) ValidateAccess(path string, info os.FileInfo) error {
 	return nil
 }
 
-// ValidateWrite checks if a write operation is allowed
-func (g *FileGuard) ValidateWrite(path string, size int64) error {
+func (g *fileGuard) validateWrite(path string, size int64) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -164,44 +233,8 @@ func (g *FileGuard) ValidateWrite(path string, size int64) error {
 	return nil
 }
 
-// AddAllowedPath adds a path to the allowed list
-func (g *FileGuard) AddAllowedPath(path string) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
-	cleanPath := filepath.Clean(absPath)
+// Helper functions
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	// Check if path is already blocked
-	for _, blocked := range g.blockedPaths {
-		if isSubPath(cleanPath, blocked) {
-			return fmt.Errorf("%w: path is blocked", ErrBlockedPath)
-		}
-	}
-
-	g.allowedPaths = append(g.allowedPaths, cleanPath)
-	return nil
-}
-
-// AddBlockedPath adds a path to the blocked list
-func (g *FileGuard) AddBlockedPath(path string) error {
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
-	}
-	cleanPath := filepath.Clean(absPath)
-
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	g.blockedPaths = append(g.blockedPaths, cleanPath)
-	return nil
-}
-
-// isSubPath checks if child path is under parent path
 func isSubPath(child, parent string) bool {
 	childParts := strings.Split(filepath.Clean(child), string(filepath.Separator))
 	parentParts := strings.Split(filepath.Clean(parent), string(filepath.Separator))
@@ -219,7 +252,6 @@ func isSubPath(child, parent string) bool {
 	return true
 }
 
-// isSymlink checks if a path is a symbolic link
 func isSymlink(path string, info os.FileInfo) (bool, error) {
 	if info == nil {
 		var err error
@@ -231,15 +263,14 @@ func isSymlink(path string, info os.FileInfo) (bool, error) {
 	return info.Mode()&os.ModeSymlink != 0, nil
 }
 
-// logAccessDenied logs an access denied event
-func (g *FileGuard) logAccessDenied(path, reason string) {
+func (g *fileGuard) logAccessDenied(path, reason string) {
 	if g.auditLog == nil {
 		return
 	}
 
 	g.auditLog.Log(
-		EventAccessDenied,
-		SeverityWarning,
+		types.EventAccessDenied,
+		types.SeverityWarning,
 		"file_guard",
 		fmt.Sprintf("Access denied to %s: %s", path, reason),
 		map[string]interface{}{

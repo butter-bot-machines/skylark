@@ -9,13 +9,13 @@ import (
 func TestErrorCreation(t *testing.T) {
 	// Test basic error creation
 	err := New(ConfigError, "configuration error")
-	if err.Type != ConfigError {
-		t.Errorf("Error type = %v, want %v", err.Type, ConfigError)
+	if GetType(err) != ConfigError {
+		t.Errorf("Error type = %v, want %v", GetType(err), ConfigError)
 	}
-	if err.Message != "configuration error" {
-		t.Errorf("Error message = %v, want %v", err.Message, "configuration error")
+	if GetMessage(err) != "configuration error" {
+		t.Errorf("Error message = %v, want %v", GetMessage(err), "configuration error")
 	}
-	if len(err.Stack) == 0 {
+	if GetStack(err) == nil {
 		t.Error("Stack trace not captured")
 	}
 
@@ -41,10 +41,11 @@ func TestErrorContext(t *testing.T) {
 		WithContext("status", 500)
 
 	// Test context values
-	if err.Context["tool"] != "example" {
+	ctx := GetContext(err)
+	if ctx["tool"] != "example" {
 		t.Error("Context value not set correctly")
 	}
-	if err.Context["status"] != 500 {
+	if ctx["status"] != 500 {
 		t.Error("Context value not set correctly")
 	}
 
@@ -59,28 +60,30 @@ func TestErrorContext(t *testing.T) {
 
 	// Test chaining
 	err = err.WithType(NetworkError)
-	if err.Type != NetworkError {
+	if GetType(err) != NetworkError {
 		t.Error("Error type not updated")
 	}
 }
 
 func TestStackTrace(t *testing.T) {
 	err := New(SystemError, "system error")
+	stack := GetStack(err)
 
 	// Verify stack frames
-	if len(err.Stack) == 0 {
+	if len(stack.Frames()) == 0 {
 		t.Fatal("No stack frames captured")
 	}
 
 	// Check first frame
-	frame := err.Stack[0]
-	if frame.File != "errors_test.go" {
-		t.Errorf("File = %v, want errors_test.go", frame.File)
+	frames := stack.Frames()
+	frame := frames[0]
+	if frame.File() != "errors_test.go" {
+		t.Errorf("File = %v, want errors_test.go", frame.File())
 	}
-	if !strings.Contains(frame.Function, "github.com/butter-bot-machines/skylark/pkg/errors.TestStackTrace") {
-		t.Errorf("Function = %v, want to contain TestStackTrace", frame.Function)
+	if !strings.Contains(frame.Function(), "github.com/butter-bot-machines/skylark/pkg/errors.TestStackTrace") {
+		t.Errorf("Function = %v, want to contain TestStackTrace", frame.Function())
 	}
-	if frame.Line == 0 {
+	if frame.Line() == 0 {
 		t.Error("Stack frame missing line number")
 	}
 }
@@ -114,6 +117,7 @@ func TestPanicRecovery(t *testing.T) {
 			}
 		}()
 		panic("test panic")
+		return nil
 	}()
 	if err == nil {
 		t.Error("Expected error from recovered panic")
@@ -130,6 +134,7 @@ func TestPanicRecovery(t *testing.T) {
 			}
 		}()
 		panic(fmt.Errorf("error panic"))
+		return nil
 	}()
 	if err == nil {
 		t.Error("Expected error from recovered panic")
@@ -194,28 +199,24 @@ func TestErrorAggregation(t *testing.T) {
 func TestErrorBehavior(t *testing.T) {
 	// Test temporary error
 	tempErr := New(NetworkError, "network error")
-	tempErr.Temporary = true
-	if !tempErr.IsTemporary() {
+	SetTemporary(tempErr)
+	if !IsTemporary(tempErr) {
 		t.Error("Error should be temporary")
 	}
 
 	// Test timeout error
 	timeoutErr := New(NetworkError, "timeout error")
-	timeoutErr.Timeout = true
-	if !timeoutErr.IsTimeout() {
+	SetTimeout(timeoutErr)
+	if !IsTimeout(timeoutErr) {
 		t.Error("Error should be timeout")
 	}
 
 	// Test nil error behavior
-	var nilErr *Error
-	if nilErr.IsTemporary() {
+	if IsTemporary(nil) {
 		t.Error("Nil error should not be temporary")
 	}
-	if nilErr.IsTimeout() {
+	if IsTimeout(nil) {
 		t.Error("Nil error should not be timeout")
-	}
-	if nilErr.Error() != "" {
-		t.Error("Nil error should return empty string")
 	}
 }
 

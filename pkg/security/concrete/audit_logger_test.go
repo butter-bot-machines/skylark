@@ -1,4 +1,4 @@
-package security
+package concrete
 
 import (
 	"bufio"
@@ -24,13 +24,13 @@ func TestAuditLog(t *testing.T) {
 				Enabled:       true,
 				Path:         logPath,
 				RetentionDays: 30,
-				Events:       []string{string(EventKeyAccess), string(EventFileAccess)},
+				Events:       []string{string(types.EventKeyAccess), string(types.EventFileAccess)},
 			},
 		},
 	}
 
 	// Create audit log
-	auditLog, err := NewAuditLog(cfg)
+	auditLog, err := NewAuditLogger(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create audit log: %v", err)
 	}
@@ -39,8 +39,8 @@ func TestAuditLog(t *testing.T) {
 	// Test basic event logging
 	t.Run("basic logging", func(t *testing.T) {
 		err := auditLog.Log(
-			EventKeyAccess,
-			SeverityInfo,
+			types.EventKeyAccess,
+			types.SeverityInfo,
 			"test",
 			"accessed key test-key",
 			map[string]interface{}{"key": "test-key"},
@@ -50,7 +50,7 @@ func TestAuditLog(t *testing.T) {
 		}
 
 		// Force flush
-		if err := auditLog.flush(); err != nil {
+		if err := auditLog.(*auditLogger).flush(); err != nil {
 			t.Errorf("Failed to flush: %v", err)
 		}
 
@@ -61,10 +61,10 @@ func TestAuditLog(t *testing.T) {
 		}
 
 		event := events[0]
-		if event.Type != EventKeyAccess {
+		if event.Type != types.EventKeyAccess {
 			t.Errorf("Wrong event type: %s", event.Type)
 		}
-		if event.Severity != SeverityInfo {
+		if event.Severity != types.SeverityInfo {
 			t.Errorf("Wrong severity: %s", event.Severity)
 		}
 		if event.Source != "test" {
@@ -82,8 +82,8 @@ func TestAuditLog(t *testing.T) {
 	t.Run("event filtering", func(t *testing.T) {
 		// Log allowed event
 		err := auditLog.Log(
-			EventFileAccess,
-			SeverityInfo,
+			types.EventFileAccess,
+			types.SeverityInfo,
 			"test",
 			"accessed file test.txt",
 			nil,
@@ -94,8 +94,8 @@ func TestAuditLog(t *testing.T) {
 
 		// Log filtered event
 		err = auditLog.Log(
-			EventCPULimit,
-			SeverityWarning,
+			types.EventCPULimit,
+			types.SeverityWarning,
 			"test",
 			"CPU limit exceeded",
 			nil,
@@ -105,20 +105,20 @@ func TestAuditLog(t *testing.T) {
 		}
 
 		// Force flush
-		if err := auditLog.flush(); err != nil {
+		if err := auditLog.(*auditLogger).flush(); err != nil {
 			t.Errorf("Failed to flush: %v", err)
 		}
 
 		// Read log file
 		events := readLogEvents(t, logPath)
-		eventTypes := make([]EventType, len(events))
+		eventTypes := make([]types.EventType, len(events))
 		for i, e := range events {
 			eventTypes[i] = e.Type
 		}
 
 		// Should only see allowed events
 		for _, eventType := range eventTypes {
-			if eventType == EventCPULimit {
+			if eventType == types.EventCPULimit {
 				t.Error("Found filtered event type in log")
 			}
 		}
@@ -129,8 +129,8 @@ func TestAuditLog(t *testing.T) {
 		// Write some events
 		for i := 0; i < 5; i++ {
 			err := auditLog.Log(
-				EventKeyAccess,
-				SeverityInfo,
+				types.EventKeyAccess,
+				types.SeverityInfo,
 				"test",
 				"test event",
 				nil,
@@ -141,7 +141,7 @@ func TestAuditLog(t *testing.T) {
 		}
 
 		// Force flush
-		if err := auditLog.flush(); err != nil {
+		if err := auditLog.(*auditLogger).flush(); err != nil {
 			t.Errorf("Failed to flush: %v", err)
 		}
 
@@ -179,8 +179,8 @@ func TestAuditLog(t *testing.T) {
 		// Write events but don't force flush
 		for i := 0; i < 3; i++ {
 			err := auditLog.Log(
-				EventKeyAccess,
-				SeverityInfo,
+				types.EventKeyAccess,
+				types.SeverityInfo,
 				"test",
 				"buffered event",
 				nil,
@@ -195,7 +195,7 @@ func TestAuditLog(t *testing.T) {
 		preFlushCount := len(events)
 
 		// Force flush
-		if err := auditLog.flush(); err != nil {
+		if err := auditLog.(*auditLogger).flush(); err != nil {
 			t.Errorf("Failed to flush: %v", err)
 		}
 
@@ -213,8 +213,8 @@ func TestAuditLog(t *testing.T) {
 		// Fill buffer
 		for i := 0; i < 101; i++ { // Buffer size is 100
 			err := auditLog.Log(
-				EventKeyAccess,
-				SeverityInfo,
+				types.EventKeyAccess,
+				types.SeverityInfo,
 				"test",
 				"auto-flush test",
 				nil,
@@ -264,7 +264,7 @@ func TestAuditLogErrors(t *testing.T) {
 			},
 		}
 
-		_, err := NewAuditLog(cfg)
+		_, err := NewAuditLogger(cfg)
 		if err == nil {
 			t.Error("Expected error for invalid path")
 		}
@@ -281,7 +281,7 @@ func TestAuditLogErrors(t *testing.T) {
 			},
 		}
 
-		log, err := NewAuditLog(cfg)
+		log, err := NewAuditLogger(cfg)
 		if err != nil {
 			t.Errorf("Unexpected error: %v", err)
 		}
@@ -292,7 +292,7 @@ func TestAuditLogErrors(t *testing.T) {
 }
 
 // readLogEvents reads all events from a log file
-func readLogEvents(t *testing.T, path string) []AuditEvent {
+func readLogEvents(t *testing.T, path string) []types.Event {
 	t.Helper()
 
 	file, err := os.Open(path)
@@ -301,10 +301,10 @@ func readLogEvents(t *testing.T, path string) []AuditEvent {
 	}
 	defer file.Close()
 
-	var events []AuditEvent
+	var events []types.Event
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		var event AuditEvent
+		var event types.Event
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
 			t.Fatalf("Failed to parse event: %v", err)
 		}

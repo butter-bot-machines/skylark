@@ -1,4 +1,4 @@
-package worker
+package concrete
 
 import (
 	"errors"
@@ -12,6 +12,7 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/process"
 	"github.com/butter-bot-machines/skylark/pkg/timing"
+	"github.com/butter-bot-machines/skylark/pkg/worker"
 )
 
 // mockJob implements the Job interface for testing
@@ -162,7 +163,7 @@ func TestWorkerPool(t *testing.T) {
 	logger := &mockLogger{}
 	procMgr := newMockProcMgr()
 
-	opts := Options{
+	opts := worker.Options{
 		Config:    &mockConfig{},
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -174,7 +175,7 @@ func TestWorkerPool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create worker pool: %v", err)
 	}
-	pool.WithClock(mock)
+	pool.(*poolImpl).WithClock(mock)
 	defer pool.Stop()
 
 	// Test successful job processing
@@ -201,11 +202,11 @@ func TestWorkerPool(t *testing.T) {
 		}
 
 		stats := pool.Stats()
-		if stats.ProcessedJobs != 1 {
-			t.Errorf("Expected 1 processed job, got %d", stats.ProcessedJobs)
+		if stats.ProcessedJobs() != 1 {
+			t.Errorf("Expected 1 processed job, got %d", stats.ProcessedJobs())
 		}
-		if stats.FailedJobs != 0 {
-			t.Errorf("Expected 0 failed jobs, got %d", stats.FailedJobs)
+		if stats.FailedJobs() != 0 {
+			t.Errorf("Expected 0 failed jobs, got %d", stats.FailedJobs())
 		}
 	})
 
@@ -235,8 +236,8 @@ func TestWorkerPool(t *testing.T) {
 		}
 
 		stats := pool.Stats()
-		if stats.FailedJobs != 1 {
-			t.Errorf("Expected 1 failed job, got %d", stats.FailedJobs)
+		if stats.FailedJobs() != 1 {
+			t.Errorf("Expected 1 failed job, got %d", stats.FailedJobs())
 		}
 	})
 
@@ -277,10 +278,10 @@ func TestWorkerPool(t *testing.T) {
 
 		// Wait for stats to update with retries
 		deadline := time.Now().Add(30 * time.Second)
-		var stats Stats
+		var stats worker.Stats
 		for time.Now().Before(deadline) {
 			stats = pool.Stats()
-			if stats.ProcessedJobs == uint64(jobCount)+1 { // +1 from first test (second test failed)
+			if stats.ProcessedJobs() == uint64(jobCount)+1 { // +1 from first test (second test failed)
 				break
 			}
 			time.Sleep(100 * time.Millisecond)
@@ -290,8 +291,8 @@ func TestWorkerPool(t *testing.T) {
 			t.Errorf("Expected %d processed jobs, got %d", jobCount, processedCount)
 		}
 
-		if stats.ProcessedJobs != uint64(jobCount)+1 { // +1 from first test (second test failed)
-			t.Errorf("Expected %d processed jobs in stats, got %d", jobCount+1, stats.ProcessedJobs)
+		if stats.ProcessedJobs() != uint64(jobCount)+1 { // +1 from first test (second test failed)
+			t.Errorf("Expected %d processed jobs in stats, got %d", jobCount+1, stats.ProcessedJobs())
 		}
 	})
 }
@@ -301,7 +302,7 @@ func TestWorkerPoolShutdown(t *testing.T) {
 	logger := &mockLogger{}
 	procMgr := newMockProcMgr()
 
-	opts := Options{
+	opts := worker.Options{
 		Config:    &mockConfig{},
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -313,7 +314,7 @@ func TestWorkerPoolShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create worker pool: %v", err)
 	}
-	pool.WithClock(mock)
+	pool.(*poolImpl).WithClock(mock)
 
 	// Queue a job that takes some time
 	var wg sync.WaitGroup
@@ -339,7 +340,7 @@ func TestWorkerPoolCPULimit(t *testing.T) {
 	logger := &mockLogger{}
 	procMgr := newMockProcMgr()
 
-	opts := Options{
+	opts := worker.Options{
 		Config:    &mockConfig{},
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -351,7 +352,7 @@ func TestWorkerPoolCPULimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create worker pool: %v", err)
 	}
-	pool.WithClock(mock)
+	pool.(*poolImpl).WithClock(mock)
 	defer pool.Stop()
 
 	t.Run("cpu limit exceeded", func(t *testing.T) {
@@ -382,8 +383,8 @@ func TestWorkerPoolCPULimit(t *testing.T) {
 		}
 
 		stats := pool.Stats()
-		if stats.FailedJobs != 1 {
-			t.Errorf("Expected 1 failed job, got %d", stats.FailedJobs)
+		if stats.FailedJobs() != 1 {
+			t.Errorf("Expected 1 failed job, got %d", stats.FailedJobs())
 		}
 	})
 

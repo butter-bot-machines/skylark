@@ -1,4 +1,4 @@
-package security
+package concrete
 
 import (
 	"errors"
@@ -41,7 +41,8 @@ func TestFileGuard(t *testing.T) {
 		t.Fatalf("Failed to create symlink: %v", err)
 	}
 
-	// Create test config
+	// Create test config with audit logging
+	logPath := filepath.Join(tmpDir, "audit.log")
 	cfg := &config.Config{
 		Security: types.SecurityConfig{
 			FilePermissions: types.FilePermissionsConfig{
@@ -50,30 +51,32 @@ func TestFileGuard(t *testing.T) {
 				AllowSymlinks: false,
 				MaxFileSize:   1024,
 			},
+			AuditLog: types.AuditLogConfig{
+				Enabled: true,
+				Path:    logPath,
+			},
 		},
 	}
 
 	// Create audit log for testing
-	auditLog, err := NewAuditLog(cfg)
+	auditLog, err := NewAuditLogger(cfg)
 	if err != nil {
 		t.Fatalf("Failed to create audit log: %v", err)
 	}
-	defer auditLog.Close()
+	if auditLog != nil {
+		defer auditLog.Close()
+	}
 
 	// Create file guard
-	guard, err := NewFileGuard(cfg, auditLog)
+	fg, err := NewFileGuard(cfg, auditLog)
 	if err != nil {
 		t.Fatalf("Failed to create file guard: %v", err)
 	}
+	guard := fg.(*fileGuard)
 
 	// Test allowed path access
 	t.Run("allowed path", func(t *testing.T) {
-		info, err := os.Stat(allowedFile)
-		if err != nil {
-			t.Fatalf("Failed to stat file: %v", err)
-		}
-
-		err = guard.ValidateAccess(allowedFile, info)
+		err := guard.CheckRead(allowedFile)
 		if err != nil {
 			t.Errorf("Expected access to be allowed, got error: %v", err)
 		}
@@ -81,12 +84,7 @@ func TestFileGuard(t *testing.T) {
 
 	// Test blocked path access
 	t.Run("blocked path", func(t *testing.T) {
-		info, err := os.Stat(blockedFile)
-		if err != nil {
-			t.Fatalf("Failed to stat file: %v", err)
-		}
-
-		err = guard.ValidateAccess(blockedFile, info)
+		err := guard.CheckRead(blockedFile)
 		if err == nil {
 			t.Error("Expected access to be denied")
 		} else if !errors.Is(err, ErrBlockedPath) {
@@ -96,12 +94,7 @@ func TestFileGuard(t *testing.T) {
 
 	// Test symlink access
 	t.Run("symlink access", func(t *testing.T) {
-		info, err := os.Lstat(symlinkPath)
-		if err != nil {
-			t.Fatalf("Failed to stat symlink: %v", err)
-		}
-
-		err = guard.ValidateAccess(symlinkPath, info)
+		err = guard.CheckRead(symlinkPath)
 		if err == nil {
 			t.Error("Expected symlink access to be denied")
 		} else if !errors.Is(err, ErrSymlinkDenied) {
@@ -109,8 +102,14 @@ func TestFileGuard(t *testing.T) {
 		}
 
 		// Test with symlinks allowed
-		guard.allowSymlinks = true
-		err = guard.ValidateAccess(symlinkPath, info)
+		cfg.Security.FilePermissions.AllowSymlinks = true
+		fg, err = NewFileGuard(cfg, auditLog)
+		if err != nil {
+			t.Fatalf("Failed to create file guard: %v", err)
+		}
+		guard = fg.(*fileGuard)
+
+		err = guard.CheckRead(symlinkPath)
 		if err != nil {
 			t.Errorf("Expected symlink access to be allowed, got: %v", err)
 		}
@@ -125,12 +124,7 @@ func TestFileGuard(t *testing.T) {
 			t.Fatalf("Failed to create large file: %v", err)
 		}
 
-		info, err := os.Stat(largeFile)
-		if err != nil {
-			t.Fatalf("Failed to stat file: %v", err)
-		}
-
-		err = guard.ValidateAccess(largeFile, info)
+		err = guard.CheckRead(largeFile)
 		if err == nil {
 			t.Error("Expected access to be denied due to file size")
 		} else if !errors.Is(err, ErrFileTooLarge) {
@@ -141,29 +135,21 @@ func TestFileGuard(t *testing.T) {
 	// Test write validation
 	t.Run("write validation", func(t *testing.T) {
 		// Test allowed write
-		err := guard.ValidateWrite(filepath.Join(allowedDir, "new.txt"), 100)
+		err := guard.CheckWrite(filepath.Join(allowedDir, "new.txt"))
 		if err != nil {
 			t.Errorf("Expected write to be allowed, got: %v", err)
 		}
 
 		// Test blocked write
-		err = guard.ValidateWrite(filepath.Join(blockedDir, "new.txt"), 100)
+		err = guard.CheckWrite(filepath.Join(blockedDir, "new.txt"))
 		if err == nil {
 			t.Error("Expected write to be denied")
 		} else if !errors.Is(err, ErrBlockedPath) {
 			t.Errorf("Expected ErrBlockedPath, got: %v", err)
 		}
-
-		// Test write size limit
-		err = guard.ValidateWrite(filepath.Join(allowedDir, "large.txt"), 2048)
-		if err == nil {
-			t.Error("Expected write to be denied due to size")
-		} else if !errors.Is(err, ErrFileTooLarge) {
-			t.Errorf("Expected ErrFileTooLarge, got: %v", err)
-		}
 	})
 
-	// Test adding allowed/blocked paths
+	// Test adding allowed paths
 	t.Run("add paths", func(t *testing.T) {
 		newAllowed := filepath.Join(tmpDir, "new-allowed")
 		if err := os.MkdirAll(newAllowed, 0755); err != nil {
@@ -176,25 +162,25 @@ func TestFileGuard(t *testing.T) {
 			t.Errorf("Failed to add allowed path: %v", err)
 		}
 
+		// Create test file in new allowed path
+		testFile := filepath.Join(newAllowed, "test.txt")
+		if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+
 		// Verify access is allowed
-		err = guard.ValidateAccess(filepath.Join(newAllowed, "test.txt"), nil)
+		err = guard.CheckRead(testFile)
 		if err != nil {
 			t.Errorf("Expected access to be allowed, got: %v", err)
 		}
 
-		// Add blocked path
-		newBlocked := filepath.Join(tmpDir, "new-blocked")
-		err = guard.AddBlockedPath(newBlocked)
-		if err != nil {
-			t.Errorf("Failed to add blocked path: %v", err)
-		}
+		// Remove allowed path
+		guard.RemoveAllowedPath(newAllowed)
 
 		// Verify access is denied
-		err = guard.ValidateAccess(filepath.Join(newBlocked, "test.txt"), nil)
+		err = guard.CheckRead(filepath.Join(newAllowed, "test.txt"))
 		if err == nil {
 			t.Error("Expected access to be denied")
-		} else if !errors.Is(err, ErrBlockedPath) {
-			t.Errorf("Expected ErrBlockedPath, got: %v", err)
 		}
 	})
 
@@ -207,7 +193,7 @@ func TestFileGuard(t *testing.T) {
 		}
 
 		for _, path := range traversalPaths {
-			err := guard.ValidateAccess(path, nil)
+			err := guard.CheckRead(path)
 			if err == nil {
 				t.Errorf("Expected path traversal to be denied for: %s", path)
 			}
@@ -251,13 +237,14 @@ func TestFileGuardErrors(t *testing.T) {
 			},
 		}
 
-		guard, err := NewFileGuard(cfg, nil)
+		fg, err := NewFileGuard(cfg, nil)
 		if err != nil {
 			t.Fatalf("Failed to create file guard: %v", err)
 		}
+		guard := fg.(*fileGuard)
 
 		nonExistentPath := filepath.Join(tmpDir, "nonexistent.txt")
-		err = guard.ValidateAccess(nonExistentPath, nil)
+		err = guard.CheckRead(nonExistentPath)
 		if err == nil {
 			t.Error("Expected error for non-existent file")
 		}

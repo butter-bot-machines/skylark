@@ -17,8 +17,9 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
 	"github.com/butter-bot-machines/skylark/pkg/process"
-	"github.com/butter-bot-machines/skylark/pkg/watcher"
+	wconcrete "github.com/butter-bot-machines/skylark/pkg/watcher/concrete"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	wkconcrete "github.com/butter-bot-machines/skylark/pkg/worker/concrete"
 	"github.com/butter-bot-machines/skylark/test/testutil"
 )
 
@@ -166,7 +167,7 @@ func TestFileAccessControl(t *testing.T) {
 	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
 	procMgr := &mockProcessManager{}
 
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -185,7 +186,7 @@ func TestFileAccessControl(t *testing.T) {
 	}
 
 	// Create watcher and wait for initialization
-	w, err := watcher.New(cfg, pool.Queue(), proc)
+	w, err := wconcrete.NewWatcher(cfg, pool.Queue(), proc)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}
@@ -360,7 +361,7 @@ func TestResourceLimits(t *testing.T) {
 		},
 	}
 
-	pool, err := worker.NewPool(worker.Options{
+	pool, err := wkconcrete.NewPool(worker.Options{
 		Config:    store,
 		Logger:    logger,
 		ProcMgr:   procMgr,
@@ -422,7 +423,7 @@ func TestResourceLimits(t *testing.T) {
 		// Create a job that tries to use too much CPU
 		job := &cpuHogJob{
 			proc:     procMgr.New("cpu-hog", nil).(*mockProcess),
-			duration: 2000, // 2 seconds (exceeds 1 second limit)
+			duration: 1100, // 1.1 seconds (slightly exceeds 1 second limit)
 			onComplete: func(interrupted bool) {
 				if !interrupted {
 					t.Error("CPU limits were not enforced")

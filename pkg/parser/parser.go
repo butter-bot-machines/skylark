@@ -106,11 +106,6 @@ func (p *Parser) ParseCommands(content string) ([]*Command, error) {
 func (p *Parser) ParseCommand(line string) (*Command, error) {
 	trimmed := strings.TrimSpace(line)
 
-	// Ignore commands starting with -!
-	if strings.HasPrefix(trimmed, "-!") {
-		return nil, fmt.Errorf("command is already processed: %s", line)
-	}
-
 	// Check command size
 	if len(trimmed) > maxCommandSize {
 		return nil, fmt.Errorf("command exceeds maximum size of %d characters", maxCommandSize)
