@@ -151,6 +151,45 @@ The key insight: Let each component do its job. Instead of mocking internal deta
 
 ---
 
+## Worker Pool Testing Insights (2024-01-03)
+
+While debugging worker pool tests, we encountered a subtle issue with job counter semantics that revealed several important lessons:
+
+1. **Counter Semantics Matter**
+   - Initially assumed all completed jobs increment ProcessedJobs
+   - Reality: Only successful jobs increment ProcessedJobs
+   - Failed jobs increment FailedJobs instead
+   - Precise counter semantics are crucial for correct testing
+
+2. **Test Assumptions vs Reality**
+   - Test expected "2 previous jobs + 5 new = 7 total"
+   - But failed jobs don't count as "processed"
+   - Actual flow: 1 success + 1 failure + 5 successes = 6 processed
+   - Debugging revealed the gap between assumptions and implementation
+
+3. **Process Lifecycle Management**
+   - Started with manual process completion in tests
+   - This bypassed worker pool's natural lifecycle
+   - Removed manual completion to let pool manage processes
+   - Tests now match production behavior more closely
+
+4. **Strategic Logging**
+   - Added detailed logging around critical points:
+     - Job processing
+     - Process lifecycle
+     - Counter updates
+   - Logs revealed exact flow of operations
+   - After fixing issues, removed excess logging
+   - Kept core test structure intact
+
+5. **Concurrency and Synchronization**
+   - Used channels to track job completion
+   - Waited for both job and process completion
+   - Atomic operations for shared counters
+   - Clear separation of job processing and stats updates
+
+Key Insight: Test assumptions must align with implementation reality. When they don't, the solution often lies in understanding the system's true behavior rather than forcing the implementation to match incorrect assumptions.
+
 # Key Takeaways
 
 1. Documentation is our shared memory.
@@ -158,4 +197,5 @@ The key insight: Let each component do its job. Instead of mocking internal deta
 3. Consumer-driven interfaces make testing natural.
 4. Clean, focused tests are easier to maintain.
 5. Quality of tests matters more than quantity.
-6. When in doubt, ask your human teammates! :wink:
+6. Test assumptions must match implementation reality.
+7. When in doubt, ask your human teammates! :wink:

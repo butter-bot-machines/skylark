@@ -155,17 +155,18 @@ func TestProviderContract(t *testing.T) {
 				returnError: nil,
 			}
 
-			// Create provider
+			// Create provider with mocks
 			p, err := New("gpt-4", config.ModelConfig{
 				APIKey:      "test-key",
 				Temperature: 0.7,
 				MaxTokens:   100,
+			}, Options{
+				HTTPClient:  client,
+				RateLimiter: rateLimiter,
 			})
 			if err != nil {
 				t.Fatalf("Failed to create provider: %v", err)
 			}
-			p.client = client
-			p.rateLimits = rateLimiter
 
 			// Setup test case
 			tt.setup(p)

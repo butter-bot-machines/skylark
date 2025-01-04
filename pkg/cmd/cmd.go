@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -11,9 +10,11 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/config"
 	"github.com/butter-bot-machines/skylark/pkg/job"
 	"github.com/butter-bot-machines/skylark/pkg/logging"
-	"github.com/butter-bot-machines/skylark/pkg/processor"
-	"github.com/butter-bot-machines/skylark/pkg/watcher"
+	slogging "github.com/butter-bot-machines/skylark/pkg/logging/slog"
+	"github.com/butter-bot-machines/skylark/pkg/processor/concrete"
+	wconcrete "github.com/butter-bot-machines/skylark/pkg/watcher/concrete"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	wkconcrete "github.com/butter-bot-machines/skylark/pkg/worker/concrete"
 )
 
 const Version = "0.1.0"
@@ -21,13 +22,13 @@ const Version = "0.1.0"
 // CLI represents the command-line interface
 type CLI struct {
 	config *config.Manager
-	logger *slog.Logger
+	logger logging.Logger
 }
 
 // NewCLI creates a new CLI instance
 func NewCLI() *CLI {
 	return &CLI{
-		logger: logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
+		logger: slogging.NewLogger(logging.LevelDebug, os.Stdout),
 	}
 }
 
@@ -176,18 +177,27 @@ func (c *CLI) Watch(args []string) error {
 		"timeout", timeout)
 
 	// Create processor
-	proc, err := processor.New(c.config.Get())
+	proc, err := concrete.NewProcessor(c.config.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
 
 	// Create worker pool
-	cfg := c.config.Get()
+	cfg := c.config.GetConfig()
 	c.logger.Debug("creating worker pool",
 		"worker_count", cfg.Workers.Count,
 		"queue_size", cfg.Workers.QueueSize)
 
-	pool := worker.NewPool(cfg)
+	pool, err := wkconcrete.NewPool(worker.Options{
+		Config:    c.config,
+		Logger:    c.logger,
+		ProcMgr:   proc.GetProcessManager(),
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %w", err)
+	}
 	defer pool.Stop()
 
 	// Create channels
@@ -198,7 +208,7 @@ func (c *CLI) Watch(args []string) error {
 
 	// Start components
 	c.logger.Debug("creating file watcher")
-	watcher, err := watcher.New(cfg, jobQueue, proc)
+	watcher, err := wconcrete.NewWatcher(cfg, jobQueue, proc)
 	if err != nil {
 		return fmt.Errorf("failed to create watcher: %w", err)
 	}
@@ -256,9 +266,9 @@ func (c *CLI) Watch(args []string) error {
 	// Final stats
 	stats := pool.Stats()
 	c.logger.Info("final status",
-		"processed", stats.ProcessedJobs,
-		"failed", stats.FailedJobs,
-		"queued", stats.QueuedJobs)
+		"processed", stats.ProcessedJobs(),
+		"failed", stats.FailedJobs(),
+		"queued", stats.QueuedJobs())
 
 	return nil
 }
@@ -273,18 +283,27 @@ func (c *CLI) RunOnce(args []string) error {
 	c.logger.Info("starting run command")
 
 	// Create processor
-	proc, err := processor.New(c.config.Get())
+	proc, err := concrete.NewProcessor(c.config.GetConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
 
 	// Create worker pool
-	cfg := c.config.Get()
+	cfg := c.config.GetConfig()
 	c.logger.Debug("creating worker pool",
 		"worker_count", cfg.Workers.Count,
 		"queue_size", cfg.Workers.QueueSize)
 
-	pool := worker.NewPool(cfg)
+	pool, err := wkconcrete.NewPool(worker.Options{
+		Config:    c.config,
+		Logger:    c.logger,
+		ProcMgr:   proc.GetProcessManager(),
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create worker pool: %w", err)
+	}
 	defer pool.Stop()
 
 	// Track progress
@@ -318,7 +337,7 @@ func (c *CLI) RunOnce(args []string) error {
 	// Wait for all jobs to complete
 	for {
 		stats := pool.Stats()
-		if stats.ProcessedJobs+stats.FailedJobs == uint64(fileCount) {
+		if stats.ProcessedJobs()+stats.FailedJobs() == uint64(fileCount) {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -330,24 +349,24 @@ func (c *CLI) RunOnce(args []string) error {
 	// Get final status
 	stats := pool.Stats()
 	c.logger.Info("processing complete",
-		"processed", stats.ProcessedJobs,
-		"failed", stats.FailedJobs,
+		"processed", stats.ProcessedJobs(),
+		"failed", stats.FailedJobs(),
 		"total", fileCount)
 
-	if stats.FailedJobs > 0 {
-		return fmt.Errorf("%d/%d files failed processing", stats.FailedJobs, fileCount)
+	if stats.FailedJobs() > 0 {
+		return fmt.Errorf("%d/%d files failed processing", stats.FailedJobs(), fileCount)
 	}
 
-	fmt.Printf("\nSuccessfully processed %d files\n", stats.ProcessedJobs)
+	fmt.Printf("\nSuccessfully processed %d files\n", stats.ProcessedJobs())
 	return nil
 }
 
 // monitorProgress displays progress information
-func (c *CLI) monitorProgress(pool *worker.Pool, done chan struct{}) {
+func (c *CLI) monitorProgress(pool worker.Pool, done chan struct{}) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
-	lastStats := worker.Stats{}
+	var lastStats worker.Stats
 	for {
 		select {
 		case <-done:
@@ -356,15 +375,15 @@ func (c *CLI) monitorProgress(pool *worker.Pool, done chan struct{}) {
 			stats := pool.Stats()
 			if stats != lastStats {
 				c.logger.Debug("progress update",
-					"processed", stats.ProcessedJobs,
-					"failed", stats.FailedJobs,
-					"queued", stats.QueuedJobs)
+					"processed", stats.ProcessedJobs(),
+					"failed", stats.FailedJobs(),
+					"queued", stats.QueuedJobs())
 				lastStats = stats
 			}
 			fmt.Printf("\rProcessed: %d, Failed: %d, Queued: %d",
-				stats.ProcessedJobs,
-				stats.FailedJobs,
-				stats.QueuedJobs)
+				stats.ProcessedJobs(),
+				stats.FailedJobs(),
+				stats.QueuedJobs())
 		}
 	}
 }

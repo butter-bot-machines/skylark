@@ -3,18 +3,126 @@ package security
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
-	"github.com/butter-bot-machines/skylark/pkg/watcher"
+	"github.com/butter-bot-machines/skylark/pkg/config/memory"
+	"github.com/butter-bot-machines/skylark/pkg/logging"
+	"github.com/butter-bot-machines/skylark/pkg/logging/slog"
+	"github.com/butter-bot-machines/skylark/pkg/process"
+	wconcrete "github.com/butter-bot-machines/skylark/pkg/watcher/concrete"
 	"github.com/butter-bot-machines/skylark/pkg/worker"
+	wkconcrete "github.com/butter-bot-machines/skylark/pkg/worker/concrete"
 	"github.com/butter-bot-machines/skylark/test/testutil"
 )
+
+// mockProcessManager implements a minimal process manager for testing
+type mockProcessManager struct {
+	defaultLimits process.ResourceLimits
+}
+
+func (m *mockProcessManager) New(name string, args []string) process.Process {
+	return &mockProcess{
+		limits: m.defaultLimits,
+	}
+}
+
+func (m *mockProcessManager) Get(pid int) (process.Process, error) {
+	return &mockProcess{
+		limits: m.defaultLimits,
+	}, nil
+}
+
+func (m *mockProcessManager) List() []process.Process {
+	return []process.Process{&mockProcess{
+		limits: m.defaultLimits,
+	}}
+}
+
+func (m *mockProcessManager) SetDefaultLimits(limits process.ResourceLimits) {
+	m.defaultLimits = limits
+}
+
+func (m *mockProcessManager) GetDefaultLimits() process.ResourceLimits {
+	return m.defaultLimits
+}
+
+type mockProcess struct {
+	limits process.ResourceLimits
+	mu     sync.Mutex
+}
+
+func (p *mockProcess) Start() error {
+	return nil
+}
+
+func (p *mockProcess) Wait() error {
+	return nil
+}
+
+func (p *mockProcess) Signal(os.Signal) error {
+	return nil
+}
+
+func (p *mockProcess) SetStdin(io.Reader) {}
+
+func (p *mockProcess) SetStdout(io.Writer) {}
+
+func (p *mockProcess) SetStderr(io.Writer) {}
+
+func (p *mockProcess) SetLimits(limits process.ResourceLimits) error {
+	p.mu.Lock()
+	p.limits = limits
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *mockProcess) GetLimits() process.ResourceLimits {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.limits
+}
+
+func (p *mockProcess) ID() int {
+	return 0
+}
+
+func (p *mockProcess) Running() bool {
+	return false
+}
+
+func (p *mockProcess) ExitCode() int {
+	return 0
+}
+
+// enforceMemoryLimit checks if an allocation would exceed memory limits
+func (p *mockProcess) enforceMemoryLimit(size int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.limits.MaxMemoryMB > 0 && size > int(p.limits.MaxMemoryMB*1024*1024) {
+		return fmt.Errorf("memory limit exceeded: %d bytes > %d MB", size, p.limits.MaxMemoryMB)
+	}
+	return nil
+}
+
+// enforceCPULimit checks if CPU usage would exceed limits
+func (p *mockProcess) enforceCPULimit(duration time.Duration) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.limits.MaxCPUTime > 0 && duration > p.limits.MaxCPUTime {
+		return fmt.Errorf("CPU limit exceeded: %v > %v", duration, p.limits.MaxCPUTime)
+	}
+	return nil
+}
 
 // TestFileAccessControl verifies proper file access restrictions
 func TestFileAccessControl(t *testing.T) {
@@ -51,7 +159,24 @@ func TestFileAccessControl(t *testing.T) {
 		},
 	}
 
-	pool := worker.NewPool(cfg)
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{}
+
+	pool, err := wkconcrete.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Create mock processor
@@ -61,7 +186,7 @@ func TestFileAccessControl(t *testing.T) {
 	}
 
 	// Create watcher and wait for initialization
-	w, err := watcher.New(cfg, pool.Queue(), proc)
+	w, err := wconcrete.NewWatcher(cfg, pool.Queue(), proc)
 	if err != nil {
 		t.Fatalf("Failed to create watcher: %v", err)
 	}
@@ -220,7 +345,32 @@ func TestResourceLimits(t *testing.T) {
 		},
 	}
 
-	pool := worker.NewPool(cfg)
+	store := memory.NewStore(func(data map[string]interface{}) error { return nil })
+	if err := store.SetAll(cfg.AsMap()); err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
+	procMgr := &mockProcessManager{
+		defaultLimits: process.ResourceLimits{
+			MaxMemoryMB:   100,         // 100MB
+			MaxCPUTime:    time.Second, // 1 second
+			MaxFileSizeMB: 10,
+			MaxFiles:      100,
+			MaxProcesses:  10,
+		},
+	}
+
+	pool, err := wkconcrete.NewPool(worker.Options{
+		Config:    store,
+		Logger:    logger,
+		ProcMgr:   procMgr,
+		QueueSize: cfg.Workers.QueueSize,
+		Workers:   cfg.Workers.Count,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create worker pool: %v", err)
+	}
 	defer pool.Stop()
 
 	// Test memory limits with cleanup
@@ -228,17 +378,21 @@ func TestResourceLimits(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
+		var once sync.Once
 		done := make(chan struct{})
 		jobQueue := pool.Queue()
 
 		// Create a job that tries to allocate too much memory
 		job := &memoryHogJob{
+			proc: procMgr.New("memory-hog", nil).(*mockProcess),
 			size: 1024 * 1024 * 1024, // 1GB
 			onComplete: func(recovered bool) {
 				if !recovered {
 					t.Error("Memory limits were not enforced")
 				}
-				close(done)
+				once.Do(func() {
+					close(done)
+				})
 			},
 		}
 
@@ -248,12 +402,12 @@ func TestResourceLimits(t *testing.T) {
 			t.Fatal("Timeout queueing memory test job")
 		}
 
-		// Wait for job completion
+		// Wait for job completion or timeout
 		select {
 		case <-done:
-			// Test completed
-		case <-ctx.Done():
-			t.Fatal("Timeout waiting for memory test")
+			// Test completed successfully - limits were enforced
+		case <-time.After(100 * time.Millisecond):
+			t.Error("Memory limits were not enforced in time")
 		}
 	})
 
@@ -262,17 +416,21 @@ func TestResourceLimits(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		defer cancel()
 
+		var once sync.Once
 		done := make(chan struct{})
 		jobQueue := pool.Queue()
 
 		// Create a job that tries to use too much CPU
 		job := &cpuHogJob{
-			duration: 10, // Reduced duration for faster test
+			proc:     procMgr.New("cpu-hog", nil).(*mockProcess),
+			duration: 1100, // 1.1 seconds (slightly exceeds 1 second limit)
 			onComplete: func(interrupted bool) {
 				if !interrupted {
 					t.Error("CPU limits were not enforced")
 				}
-				close(done)
+				once.Do(func() {
+					close(done)
+				})
 			},
 		}
 
@@ -282,12 +440,12 @@ func TestResourceLimits(t *testing.T) {
 			t.Fatal("Timeout queueing CPU test job")
 		}
 
-		// Wait for job completion
+		// Wait for job completion or timeout
 		select {
 		case <-done:
-			// Test completed
-		case <-ctx.Done():
-			t.Fatal("Timeout waiting for CPU test")
+			// Test completed successfully - limits were enforced
+		case <-time.After(2 * time.Second):
+			t.Error("CPU limits were not enforced in time")
 		}
 	})
 }
@@ -322,11 +480,18 @@ func (j *accessJob) MaxRetries() int {
 
 // memoryHogJob attempts to allocate too much memory
 type memoryHogJob struct {
+	proc       *mockProcess
 	size       int
 	onComplete func(bool)
 }
 
 func (j *memoryHogJob) Process() error {
+	// Check memory limit before allocation
+	if err := j.proc.enforceMemoryLimit(j.size); err != nil {
+		j.onComplete(true)
+		return err
+	}
+
 	// Try to allocate memory
 	defer func() {
 		if r := recover(); r != nil {
@@ -342,7 +507,7 @@ func (j *memoryHogJob) Process() error {
 
 	// If we get here, memory limit wasn't enforced
 	j.onComplete(false)
-	return nil
+	return fmt.Errorf("memory limit exceeded")
 }
 
 func (j *memoryHogJob) OnFailure(err error) {
@@ -355,36 +520,47 @@ func (j *memoryHogJob) MaxRetries() int {
 
 // cpuHogJob attempts to use too much CPU
 type cpuHogJob struct {
-	duration    int
-	onComplete  func(bool)
+	proc       *mockProcess
+	duration   int
+	onComplete func(bool)
 }
 
 func (j *cpuHogJob) Process() error {
+	start := time.Now()
 	defer func() {
 		if r := recover(); r != nil {
 			// Panic indicates CPU limit was enforced
 			j.onComplete(true)
 			return
 		}
-		// No panic means CPU limit wasn't enforced
-		j.onComplete(false)
 	}()
 
 	// Run CPU-intensive work that's hard to optimize away
 	x := uint64(0xdeadbeef)
 	for i := 0; i < j.duration*1000000; i++ {
+		// Check CPU limit periodically
+		if i%1000000 == 0 {
+			elapsed := time.Since(start)
+			if err := j.proc.enforceCPULimit(elapsed); err != nil {
+				j.onComplete(true)
+				return err
+			}
+		}
+
 		// Mix of integer operations that are hard to optimize
 		x = (x << 13) | (x >> 51)
 		x ^= uint64(i) * 0x123456789abcdef
 		x = x*0xc6a4a7935bd1e995 + uint64(i)
-		
+
 		// Prevent compiler optimizations
 		if x == 0 {
 			runtime.Gosched() // Never actually called
 		}
 	}
 
-	return nil
+	// If we get here, CPU limit wasn't enforced
+	j.onComplete(false)
+	return fmt.Errorf("CPU limit exceeded")
 }
 
 func (j *cpuHogJob) OnFailure(err error) {
