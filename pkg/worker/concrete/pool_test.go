@@ -124,6 +124,7 @@ type mockProcMgr struct {
 	processes       []*mockProcess
 	mu              sync.Mutex
 	newFunc         func(name string, args []string) process.Process
+	defaultLimits   process.ResourceLimits
 }
 
 func newMockProcMgr() *mockProcMgr {
@@ -141,6 +142,18 @@ func newMockProcMgr() *mockProcMgr {
 
 func (m *mockProcMgr) New(name string, args []string) process.Process {
 	return m.newFunc(name, args)
+}
+
+func (m *mockProcMgr) SetDefaultLimits(limits process.ResourceLimits) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.defaultLimits = limits
+}
+
+func (m *mockProcMgr) GetDefaultLimits() process.ResourceLimits {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.defaultLimits
 }
 
 // mockConfig implements config.Store for testing

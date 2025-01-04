@@ -254,9 +254,12 @@ func (p *processorImpl) UpdateFile(path string, responses []processor.Response) 
 	}
 	newLines = append(newLines, "")
 
-	// Write back
+	// Only write back if content changed
 	newContent := strings.Join(newLines, "\n")
-	return os.WriteFile(path, []byte(newContent), 0644)
+	if string(content) != newContent {
+		return os.WriteFile(path, []byte(newContent), 0644)
+	}
+	return nil
 }
 
 // GetProcessManager returns the process manager for worker pool integration

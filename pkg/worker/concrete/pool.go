@@ -2,8 +2,6 @@ package concrete
 
 import (
 	"fmt"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -61,59 +59,24 @@ func (w *workerImpl) Start() error {
 
 			logger.Debug("processing job")
 
-			// Create process with resource limits
-			proc := w.pool.procMgr.New("worker", []string{fmt.Sprintf("%d", w.id)})
-			if err := proc.SetLimits(process.ResourceLimits{
+			// Set resource limits for the job
+			limits := process.ResourceLimits{
 				MaxCPUTime:    w.pool.limits.MaxCPUTime,
-				MaxMemoryMB:   int64(w.pool.limits.MaxMemory / (1024 * 1024)), // Convert bytes to MB
-				MaxFileSizeMB: int64(w.pool.limits.MaxFileSize / (1024 * 1024)),
-				MaxFiles:      int64(w.pool.limits.MaxFiles),
-				MaxProcesses:  int64(w.pool.limits.MaxProcesses),
-			}); err != nil {
-				logger.Error("failed to set resource limits", "error", err)
-				atomic.AddUint64(&w.pool.stats.failedJobs, 1)
-				job.OnFailure(err)
-				continue
+				MaxMemoryMB:   w.pool.limits.MaxMemoryMB,
+				MaxFileSizeMB: w.pool.limits.MaxFileSizeMB,
+				MaxFiles:      w.pool.limits.MaxFiles,
+				MaxProcesses:  w.pool.limits.MaxProcesses,
 			}
-
-			// Start the process
-			if err := proc.Start(); err != nil {
-				logger.Error("failed to start process", "error", err)
-				atomic.AddUint64(&w.pool.stats.failedJobs, 1)
-				job.OnFailure(err)
-				continue
-			}
+			w.pool.procMgr.SetDefaultLimits(limits)
 
 			// Run the job
 			logger.Debug("running job")
-			jobErr := job.Process()
-			logger.Debug("job process returned", "error", jobErr)
-
-			// Signal process completion
-			logger.Debug("signaling process completion")
-			if err := proc.Signal(os.Interrupt); err != nil {
-				logger.Error("failed to signal process", "error", err)
-			}
-
-			// Wait for process completion
-			logger.Debug("waiting for process completion")
-			waitErr := proc.Wait()
-			logger.Debug("process wait returned", "error", waitErr)
-
-			// Handle errors and update stats
-			if jobErr != nil {
-				logger.Error("job failed", "error", jobErr)
+			if err := job.Process(); err != nil {
+				logger.Error("job failed", "error", err)
 				atomic.AddUint64(&w.pool.stats.failedJobs, 1)
-				job.OnFailure(jobErr)
-			} else if waitErr != nil {
-				// Process failed, check if it was a resource limit
-				if strings.Contains(waitErr.Error(), "CPU limit exceeded") || strings.Contains(waitErr.Error(), "out of memory") {
-					logger.Warn("job failed (resource limit)", "error", waitErr)
-					atomic.AddUint64(&w.pool.stats.failedJobs, 1)
-					job.OnFailure(waitErr)
-				}
+				job.OnFailure(err)
 			} else {
-				logger.Debug("job and process completed successfully")
+				logger.Debug("job completed successfully")
 				atomic.AddUint64(&w.pool.stats.processedJobs, 1)
 				logger.Debug("stats updated",
 					"processed_jobs", atomic.LoadUint64(&w.pool.stats.processedJobs),
@@ -139,10 +102,11 @@ type poolImpl struct {
 	done          chan struct{}
 	wg            sync.WaitGroup
 	stats         *poolStats
-	limits        ResourceLimits
+	limits        process.ResourceLimits
 	queueWrappers sync.WaitGroup
 	logger        logging.Logger
 	procMgr       process.Manager
+	clock         timing.Clock
 }
 
 // NewPool creates a new worker pool
@@ -161,9 +125,10 @@ func NewPool(opts worker.Options) (worker.Pool, error) {
 		jobQueue: make(chan job.Job, opts.QueueSize),
 		done:     make(chan struct{}),
 		stats:    &poolStats{},
-		limits:   DefaultLimits(),
+		limits:   opts.ProcMgr.GetDefaultLimits(),
 		logger:   opts.Logger.WithGroup("worker"),
 		procMgr:  opts.ProcMgr,
+		clock:    timing.New(),
 	}
 
 	p.workers = make([]*workerImpl, opts.Workers)
@@ -183,10 +148,9 @@ func NewPool(opts worker.Options) (worker.Pool, error) {
 
 	return p, nil
 }
-
 // WithClock sets a custom clock for the worker pool
 func (p *poolImpl) WithClock(clock timing.Clock) worker.Pool {
-	p.limits = p.limits.WithClock(clock)
+	p.clock = clock
 	return p
 }
 
@@ -233,6 +197,6 @@ func (p *poolImpl) Stop() {
 	close(p.done)          // Signal all goroutines to stop
 	p.queueWrappers.Wait() // Wait for queue wrapper goroutines to finish
 	close(p.jobQueue)      // Close the job queue
-	p.wg.Wait()           // Wait for all workers to finish
+	p.wg.Wait()            // Wait for all workers to finish
 	p.logger.Info("worker pool stopped")
 }

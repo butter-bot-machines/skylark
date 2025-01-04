@@ -96,8 +96,8 @@ func (w *watcherImpl) watch() {
 			if !ok {
 				return
 			}
-			// Only process .md files
-			if filepath.Ext(event.Name) != ".md" {
+			// Skip files in .skai directory and non-markdown files
+			if filepath.Ext(event.Name) != ".md" || filepath.Base(filepath.Dir(event.Name)) == ".skai" {
 				continue
 			}
 			// Debounce events

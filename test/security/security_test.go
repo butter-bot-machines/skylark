@@ -353,8 +353,8 @@ func TestResourceLimits(t *testing.T) {
 	logger := slog.NewLogger(logging.LevelInfo, os.Stdout)
 	procMgr := &mockProcessManager{
 		defaultLimits: process.ResourceLimits{
-			MaxMemoryMB:   100,         // 100MB
-			MaxCPUTime:    time.Second, // 1 second
+			MaxMemoryMB:   100,                    // 100MB
+			MaxCPUTime:    100 * time.Millisecond, // 100ms - short enough for test
 			MaxFileSizeMB: 10,
 			MaxFiles:      100,
 			MaxProcesses:  10,
@@ -423,7 +423,7 @@ func TestResourceLimits(t *testing.T) {
 		// Create a job that tries to use too much CPU
 		job := &cpuHogJob{
 			proc:     procMgr.New("cpu-hog", nil).(*mockProcess),
-			duration: 1100, // 1.1 seconds (slightly exceeds 1 second limit)
+			duration: 110, // 110ms (slightly exceeds 100ms limit)
 			onComplete: func(interrupted bool) {
 				if !interrupted {
 					t.Error("CPU limits were not enforced")
@@ -444,8 +444,8 @@ func TestResourceLimits(t *testing.T) {
 		select {
 		case <-done:
 			// Test completed successfully - limits were enforced
-		case <-time.After(2 * time.Second):
-			t.Error("CPU limits were not enforced in time")
+		case <-time.After(200 * time.Millisecond):
+			t.Error("CPU limits were not enforced within 200ms")
 		}
 	})
 }
@@ -535,26 +535,52 @@ func (j *cpuHogJob) Process() error {
 		}
 	}()
 
-	// Run CPU-intensive work that's hard to optimize away
-	x := uint64(0xdeadbeef)
-	for i := 0; i < j.duration*1000000; i++ {
-		// Check CPU limit periodically
-		if i%1000000 == 0 {
+	// Run CPU-intensive work
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Use multiple goroutines to max out CPU
+	var wg sync.WaitGroup
+	for i := 0; i < runtime.NumCPU(); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			x := uint64(0xdeadbeef)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					// CPU intensive operations
+					x = (x << 13) | (x >> 51)
+					x ^= x * 0x123456789abcdef
+					x = x*0xc6a4a7935bd1e995 + 1
+					
+					if x == 0 {
+						runtime.Gosched()
+					}
+				}
+			}
+		}()
+	}
+
+	// Check CPU usage periodically
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
 			elapsed := time.Since(start)
 			if err := j.proc.enforceCPULimit(elapsed); err != nil {
+				cancel() // Signal all goroutines to stop
+				wg.Wait() // Wait for all goroutines to finish
 				j.onComplete(true)
 				return err
 			}
-		}
-
-		// Mix of integer operations that are hard to optimize
-		x = (x << 13) | (x >> 51)
-		x ^= uint64(i) * 0x123456789abcdef
-		x = x*0xc6a4a7935bd1e995 + uint64(i)
-
-		// Prevent compiler optimizations
-		if x == 0 {
-			runtime.Gosched() // Never actually called
+		case <-ctx.Done():
+			wg.Wait()
+			return nil
 		}
 	}
 

@@ -318,7 +318,14 @@ func (c *CLI) RunOnce(args []string) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && filepath.Ext(path) == ".md" {
+		// Skip .skai directory and non-markdown files
+		if info.IsDir() {
+			if filepath.Base(path) == ".skai" {
+				return filepath.SkipDir // Skip the entire .skai directory
+			}
+			return nil
+		}
+		if filepath.Ext(path) == ".md" {
 			c.logger.Debug("queueing file", "path", path)
 			pool.Queue() <- job.NewFileChangeJob(path, proc)
 			fileCount++
