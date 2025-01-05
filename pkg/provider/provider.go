@@ -2,9 +2,23 @@ package provider
 
 import "context"
 
+// RequestOptions contains configuration options for a single request
+type RequestOptions struct {
+	Model       string  // Model to use for this request
+	Temperature float64 // Temperature setting for this request
+	MaxTokens   int     // Max tokens for this request
+}
+
+// DefaultRequestOptions provides commonly used request settings for testing
+var DefaultRequestOptions = &RequestOptions{
+	Model:       "gpt-4",
+	Temperature: 0.7,
+	MaxTokens:   100,
+}
+
 // Provider defines the interface for model providers
 type Provider interface {
-	Send(ctx context.Context, prompt string) (*Response, error)
+	Send(ctx context.Context, prompt string, opts *RequestOptions) (*Response, error)
 	Close() error
 }
 

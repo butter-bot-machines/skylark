@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/provider"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
 
@@ -86,8 +87,8 @@ func TestProviderMonitoring(t *testing.T) {
 			t.Fatalf("Failed to create provider: %v", err)
 		}
 
-		// Send request
-		_, err = p.Send(context.Background(), "test")
+		// Send request with default options
+		_, err = p.Send(context.Background(), "test", provider.DefaultRequestOptions)
 		if err != nil {
 			t.Fatalf("Send failed: %v", err)
 		}
@@ -149,8 +150,8 @@ func TestProviderMonitoring(t *testing.T) {
 			t.Fatalf("Failed to create provider: %v", err)
 		}
 
-		// Send request (expect error)
-		_, err = p.Send(context.Background(), "test")
+		// Send request (expect error) with default options
+		_, err = p.Send(context.Background(), "test", provider.DefaultRequestOptions)
 		if err == nil {
 			t.Fatal("Expected error but got none")
 		}
@@ -240,8 +241,8 @@ func TestProviderMonitoring(t *testing.T) {
 		}
 		p.RegisterTool("test_tool", &testTool{schema: schema})
 
-		// Send request
-		_, err = p.Send(context.Background(), "test")
+		// Send request with default options
+		_, err = p.Send(context.Background(), "test", provider.DefaultRequestOptions)
 		if err != nil {
 			t.Fatalf("Send failed: %v", err)
 		}

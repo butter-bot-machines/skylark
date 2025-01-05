@@ -11,6 +11,7 @@ import (
 
 	"github.com/butter-bot-machines/skylark/pkg/parser"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
+	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
@@ -206,7 +207,7 @@ func main() {
 			}
 
 			// Create test components
-			provider := &testProvider{responses: tt.responses}
+			testProv := &testProvider{responses: tt.responses}
 			toolMgr := tool.NewManager(toolsDir)
 
 			// Compile tool
@@ -230,14 +231,22 @@ func main() {
 				t.Fatal(err)
 			}
 
+			// Create provider registry
+			reg := registry.New()
+			reg.Register("test", func(model string) (provider.Provider, error) {
+				return testProv, nil
+			})
+
 			// Create assistant
 			assistant := &Assistant{
-				Name:     "test",
-				Tools:    []string{"summarize"},
-				provider: provider,
-				toolMgr:  toolMgr,
-				sandbox:  sb,
-				logger:   slog.Default(), // Use default logger for tests
+				Name:            "test",
+				Tools:           []string{"summarize"},
+				Model:           "test:model",
+				toolMgr:         toolMgr,
+				providers:       reg,
+				defaultProvider: "test",
+				sandbox:         sb,
+				logger:          slog.Default(), // Use default logger for tests
 			}
 
 			// Parse command
@@ -258,8 +267,8 @@ func main() {
 			}
 
 			// Verify provider interaction
-			if len(provider.requests) != tt.wantRequests {
-				t.Errorf("Got %d provider requests, want %d", len(provider.requests), tt.wantRequests)
+			if len(testProv.requests) != tt.wantRequests {
+				t.Errorf("Got %d provider requests, want %d", len(testProv.requests), tt.wantRequests)
 			}
 
 			// Verify response
@@ -268,8 +277,8 @@ func main() {
 			}
 
 			// Verify context in provider requests
-			if tt.name == "tool result in context" && len(provider.requests) > 0 {
-				request := provider.requests[0]
+			if tt.name == "tool result in context" && len(testProv.requests) > 0 {
+				request := testProv.requests[0]
 				if !strings.Contains(request, "Tool result: test result") {
 					t.Error("Tool result not found in provider context")
 				}

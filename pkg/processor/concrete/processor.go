@@ -16,6 +16,7 @@ import (
 	"github.com/butter-bot-machines/skylark/pkg/processor"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
 	"github.com/butter-bot-machines/skylark/pkg/provider/openai"
+	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 	"github.com/butter-bot-machines/skylark/pkg/timing"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
@@ -47,25 +48,25 @@ func NewProcessor(cfg *config.Config) (processor.ProcessManager, error) {
 	// Create tool manager
 	toolMgr := tool.NewManager(filepath.Join(cfg.Environment.ConfigDir, "tools"))
 
-	// Create provider
-	var p provider.Provider
-	var err error
+	// Create provider registry
+	reg := registry.New()
 
-	// Get OpenAI GPT-4 config
-	modelConfig, ok := cfg.GetModelConfig("openai", "gpt-4")
-	if !ok {
-		return nil, fmt.Errorf("OpenAI GPT-4 configuration not found")
-	}
-
-	// In tests, use mock provider
-	if modelConfig.APIKey == "test-key" {
-		p = newMockProvider()
+	// Register provider factory
+	if cfg.Models["openai"]["gpt-4"].APIKey == "test-key" {
+		// Use mock provider in tests
+		reg.Register("openai", func(model string) (provider.Provider, error) {
+			return newMockProvider(), nil
+		})
 	} else {
-		// Create OpenAI provider with default options
-		p, err = openai.New("gpt-4", modelConfig, openai.Options{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create OpenAI provider: %w", err)
-		}
+		// Use real OpenAI provider
+		reg.Register("openai", func(model string) (provider.Provider, error) {
+			modelConfig, ok := cfg.GetModelConfig("openai", model)
+			if !ok {
+				return nil, fmt.Errorf("OpenAI configuration not found for model: %s", model)
+			}
+
+			return openai.New(model, modelConfig, openai.Options{})
+		})
 	}
 
 	// Create network policy
@@ -80,12 +81,13 @@ func NewProcessor(cfg *config.Config) (processor.ProcessManager, error) {
 		},
 	}
 
-	// Create assistant manager
+	// Create assistant manager with provider registry
 	assistantMgr, err := assistant.NewManager(
 		filepath.Join(cfg.Environment.ConfigDir, "assistants"),
 		toolMgr,
-		p,
+		reg,
 		networkPolicy,
+		"openai", // Default provider
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create assistant manager: %w", err)

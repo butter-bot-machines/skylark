@@ -11,6 +11,7 @@ import (
 
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/parser"
+	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
@@ -24,29 +25,31 @@ type toolManager interface {
 
 // Assistant represents a configured assistant
 type Assistant struct {
-	Name        string            `yaml:"name"`
-	Description string            `yaml:"description"`
-	Model       string            `yaml:"model"`
-	Tools       []string          `yaml:"tools,omitempty"`
-	Prompt      string            `yaml:"-"` // Loaded from prompt.md content
-	toolMgr     toolManager       // Tool manager
-	provider    provider.Provider // AI provider
-	sandbox     *sandbox.Sandbox  // Tool sandbox
-	logger      *slog.Logger      // Logger
+	Name            string            `yaml:"name"`
+	Description     string            `yaml:"description"`
+	Model           string            `yaml:"model"`
+	Tools           []string          `yaml:"tools,omitempty"`
+	Prompt          string            `yaml:"-"` // Loaded from prompt.md content
+	toolMgr         toolManager       // Tool manager
+	providers       *registry.Registry // Provider registry
+	defaultProvider string            // Default provider name
+	sandbox         *sandbox.Sandbox  // Tool sandbox
+	logger          *slog.Logger      // Logger
 }
 
 // Manager handles loading and managing assistants
 type Manager struct {
-	assistants map[string]*Assistant
-	basePath   string
-	toolMgr    *tool.Manager
-	provider   provider.Provider
-	sandbox    *sandbox.Sandbox
-	logger     *slog.Logger
+	assistants      map[string]*Assistant
+	basePath        string
+	toolMgr         *tool.Manager
+	providers       *registry.Registry
+	defaultProvider string
+	sandbox         *sandbox.Sandbox
+	logger          *slog.Logger
 }
 
 // NewManager creates a new assistant manager
-func NewManager(basePath string, toolMgr *tool.Manager, p provider.Provider, network *sandbox.NetworkPolicy) (*Manager, error) {
+func NewManager(basePath string, toolMgr *tool.Manager, providers *registry.Registry, network *sandbox.NetworkPolicy, defaultProvider string) (*Manager, error) {
 	// Create sandbox
 	sb, err := sandbox.NewSandbox(filepath.Join(basePath, "tools"), &sandbox.DefaultLimits, network)
 	if err != nil {
@@ -54,12 +57,13 @@ func NewManager(basePath string, toolMgr *tool.Manager, p provider.Provider, net
 	}
 
 	return &Manager{
-		assistants: make(map[string]*Assistant),
-		basePath:   basePath,
-		toolMgr:    toolMgr,
-		provider:   p,
-		sandbox:    sb,
-		logger:     logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
+		assistants:      make(map[string]*Assistant),
+		basePath:        basePath,
+		toolMgr:         toolMgr,
+		providers:       providers,
+		defaultProvider: defaultProvider,
+		sandbox:         sb,
+		logger:         logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
 	}, nil
 }
 
@@ -78,7 +82,8 @@ func (m *Manager) Get(name string) (*Assistant, error) {
 
 	// Initialize assistant components
 	assistant.toolMgr = m.toolMgr
-	assistant.provider = m.provider
+	assistant.providers = m.providers
+	assistant.defaultProvider = m.defaultProvider
 	assistant.sandbox = m.sandbox
 	assistant.logger = m.logger
 
@@ -136,8 +141,25 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 	ctx := context.Background()
 	prompt := a.buildPrompt(cmd)
 
+	// Get provider for this assistant's model
+	p, err := a.providers.CreateForModel(a.Model, a.defaultProvider)
+	if err != nil {
+		return "", fmt.Errorf("failed to create provider: %w", err)
+	}
+	defer p.Close()
+
+	// Get model name without provider prefix
+	_, modelName := registry.ParseModelSpec(a.Model)
+
+	// Build request options from assistant config
+	opts := &provider.RequestOptions{
+		Model:       modelName,
+		Temperature: 0.7,  // Default temperature
+		MaxTokens:   2000, // Default max tokens
+	}
+
 	// Get response from provider
-	resp, err := a.provider.Send(ctx, prompt)
+	resp, err := p.Send(ctx, prompt, opts)
 	if err != nil {
 		return "", fmt.Errorf("provider error: %w", err)
 	}
@@ -158,7 +180,7 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 
 		// Get final response with tool results
 		prompt = a.buildPrompt(cmd)
-		resp, err = a.provider.Send(ctx, prompt)
+		resp, err = p.Send(ctx, prompt, opts)
 		if err != nil {
 			return "", fmt.Errorf("provider error after tools: %w", err)
 		}

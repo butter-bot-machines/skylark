@@ -2,42 +2,33 @@ package concrete
 
 import (
 	"context"
-	"strings"
 
-	"github.com/butter-bot-machines/skylark/pkg/parser"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
 )
 
-// mockProvider implements provider.Provider for testing
+// mockProvider simulates an AI provider for testing
 type mockProvider struct {
-	provider.Provider
+	response string
 }
 
-func newMockProvider() provider.Provider {
-	return &mockProvider{}
-}
-
-func (p *mockProvider) Process(cmd *parser.Command) (string, error) {
-	// For testing, return raw response
-	return "test", nil
-}
-
-func (p *mockProvider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
-	// Extract command from prompt
-	lines := strings.Split(prompt, "\n")
-	var command string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Command: ") {
-			command = strings.TrimPrefix(line, "Command: ")
-			break
-		}
-	}
-	// Return raw command response
+func (p *mockProvider) Send(ctx context.Context, prompt string, opts *provider.RequestOptions) (*provider.Response, error) {
 	return &provider.Response{
-		Content: command,
+		Content: p.response,
+		Usage: provider.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 5,
+			TotalTokens:      15,
+		},
 	}, nil
 }
 
 func (p *mockProvider) Close() error {
 	return nil
+}
+
+// newMockProvider creates a new mock provider for testing
+func newMockProvider() provider.Provider {
+	return &mockProvider{
+		response: "command",
+	}
 }

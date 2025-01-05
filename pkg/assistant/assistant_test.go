@@ -2,25 +2,33 @@ package assistant
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/butter-bot-machines/skylark/pkg/parser"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
+	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
 
 // mockProvider implements provider.Provider for testing
 type mockProvider struct {
-	response string
-	err      error
+	response      string
+	err           error
+	verifyOptions func(*provider.RequestOptions) error
 }
 
-func (m *mockProvider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
+func (m *mockProvider) Send(ctx context.Context, prompt string, opts *provider.RequestOptions) (*provider.Response, error) {
 	if m.err != nil {
 		return nil, m.err
+	}
+	if m.verifyOptions != nil {
+		if err := m.verifyOptions(opts); err != nil {
+			return nil, err
+		}
 	}
 	return &provider.Response{
 		Content: m.response,
@@ -34,6 +42,85 @@ func (m *mockProvider) Send(ctx context.Context, prompt string) (*provider.Respo
 
 func (m *mockProvider) Close() error {
 	return nil
+}
+
+func TestAssistantModelConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		modelConfig string
+		wantModel   string
+	}{
+		{
+			name:        "simple model name",
+			modelConfig: "gpt-3.5-turbo",
+			wantModel:   "gpt-3.5-turbo",
+		},
+		{
+			name:        "provider:model format",
+			modelConfig: "openai:gpt-4",
+			wantModel:   "gpt-4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temporary test directory
+			tempDir := t.TempDir()
+			assistantDir := filepath.Join(tempDir, "test-assistant")
+			err := os.MkdirAll(assistantDir, 0755)
+			if err != nil {
+				t.Fatalf("Failed to create test directory: %v", err)
+			}
+
+			// Create test prompt.md with specific model
+			promptContent := fmt.Sprintf(`---
+name: test-assistant
+description: A test assistant
+model: %s
+---
+Test prompt content
+`, tt.modelConfig)
+			err = os.WriteFile(filepath.Join(assistantDir, "prompt.md"), []byte(promptContent), 0644)
+			if err != nil {
+				t.Fatalf("Failed to create test prompt.md: %v", err)
+			}
+
+			// Create mock provider that verifies model config
+			mockProvider := &mockProvider{
+				response: "Test response",
+				verifyOptions: func(opts *provider.RequestOptions) error {
+					if opts.Model != tt.wantModel {
+						return fmt.Errorf("expected model %s, got %s", tt.wantModel, opts.Model)
+					}
+					return nil
+				},
+			}
+
+			// Create provider registry
+			reg := registry.New()
+			reg.Register("openai", func(model string) (provider.Provider, error) {
+				return mockProvider, nil
+			})
+
+			// Create manager
+			manager, err := NewManager(tempDir, tool.NewManager(tempDir), reg, &sandbox.NetworkPolicy{}, "openai")
+			if err != nil {
+				t.Fatalf("NewManager() error = %v", err)
+			}
+
+			// Get assistant
+			assistant, err := manager.Get("test-assistant")
+			if err != nil {
+				t.Fatalf("Get() error = %v", err)
+			}
+
+			// Process command - this should use the assistant's model config
+			_, err = assistant.Process(&parser.Command{Text: "test"})
+			if err != nil {
+				t.Fatalf("Process() error = %v", err)
+			}
+		})
+	}
 }
 
 func TestAssistantManager(t *testing.T) {
@@ -118,6 +205,12 @@ func main() {
 		response: "Test response",
 	}
 
+	// Create provider registry
+	reg := registry.New()
+	reg.Register("openai", func(model string) (provider.Provider, error) {
+		return mockProvider, nil
+	})
+
 	// Create tool manager
 	toolMgr := tool.NewManager(toolsDir)
 
@@ -127,8 +220,8 @@ func main() {
 		AllowInbound:  false,
 	}
 
-	// Create manager with network policy
-	manager, err := NewManager(tempDir, toolMgr, mockProvider, networkPolicy)
+	// Create manager with provider registry
+	manager, err := NewManager(tempDir, toolMgr, reg, networkPolicy, "openai")
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}

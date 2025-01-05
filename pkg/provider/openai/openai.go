@@ -114,7 +114,7 @@ func New(model string, cfg config.ModelConfig, opts Options) (*Provider, error) 
 }
 
 // Send sends a prompt to OpenAI and returns the response
-func (p *Provider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
+func (p *Provider) Send(ctx context.Context, prompt string, opts *provider.RequestOptions) (*provider.Response, error) {
 	start := time.Now()
 	success := false
 	defer func() {
@@ -135,15 +135,31 @@ func (p *Provider) Send(ctx context.Context, prompt string) (*provider.Response,
 		return nil, err
 	}
 
-	// Build request
+	// Build request with options or defaults
+	model := p.model
+	temperature := p.config.Temperature
+	maxTokens := p.config.MaxTokens
+	
+	if opts != nil {
+		if opts.Model != "" {
+			model = opts.Model
+		}
+		if opts.Temperature != 0 {
+			temperature = opts.Temperature
+		}
+		if opts.MaxTokens != 0 {
+			maxTokens = opts.MaxTokens
+		}
+	}
+
 	req := map[string]any{
-		"model": p.model,
+		"model": model,
 		"messages": []map[string]any{{
 			"role":    "user",
 			"content": prompt,
 		}},
-		"temperature": p.config.Temperature,
-		"max_tokens":  p.config.MaxTokens,
+		"temperature": temperature,
+		"max_tokens":  maxTokens,
 	}
 
 	// Add tools if available

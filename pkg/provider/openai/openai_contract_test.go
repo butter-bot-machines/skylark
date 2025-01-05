@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/butter-bot-machines/skylark/pkg/config"
+	"github.com/butter-bot-machines/skylark/pkg/provider"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 )
 
@@ -171,8 +172,8 @@ func TestProviderContract(t *testing.T) {
 			// Setup test case
 			tt.setup(p)
 
-			// Send prompt
-			resp, err := p.Send(context.Background(), tt.prompt)
+			// Send prompt with default options
+			resp, err := p.Send(context.Background(), tt.prompt, provider.DefaultRequestOptions)
 			if err != nil {
 				t.Fatalf("Send failed: %v", err)
 			}

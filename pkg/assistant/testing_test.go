@@ -12,7 +12,7 @@ type testProvider struct {
 	requests  []string
 }
 
-func (p *testProvider) Send(ctx context.Context, prompt string) (*provider.Response, error) {
+func (p *testProvider) Send(ctx context.Context, prompt string, opts *provider.RequestOptions) (*provider.Response, error) {
 	if len(p.responses) == 0 {
 		return nil, &provider.Error{Code: provider.ErrServerError, Message: "no responses configured"}
 	}

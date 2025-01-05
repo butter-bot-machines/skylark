@@ -13,7 +13,7 @@ type mockProvider struct {
 	delay    time.Duration
 }
 
-func (m *mockProvider) Send(ctx context.Context, prompt string) (*Response, error) {
+func (m *mockProvider) Send(ctx context.Context, prompt string, opts *RequestOptions) (*Response, error) {
 	if m.delay > 0 {
 		select {
 		case <-ctx.Done():
@@ -78,7 +78,7 @@ func TestProviderInterface(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			got, err := tt.provider.Send(ctx, tt.prompt)
+			got, err := tt.provider.Send(ctx, tt.prompt, DefaultRequestOptions)
 
 			if tt.wantErr != nil {
 				if err == nil {
@@ -114,7 +114,7 @@ func TestContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := provider.Send(ctx, "test")
+	_, err := provider.Send(ctx, "test", DefaultRequestOptions)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled error, got %v", err)
 	}
@@ -129,7 +129,7 @@ func TestContextTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
 
-	_, err := provider.Send(ctx, "test")
+	_, err := provider.Send(ctx, "test", DefaultRequestOptions)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("expected context.DeadlineExceeded error, got %v", err)
 	}
