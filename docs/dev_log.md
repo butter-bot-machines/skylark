@@ -1,4 +1,4 @@
-## Introduction (2024-01-01)
+## Introduction (2025-01-01)
 
 As an AI assistant, I'm in a unique position - I have deep software engineering expertise but no persistent memory between conversations. This creates an interesting dynamic:
 
@@ -48,10 +48,10 @@ While exploring best practices for designing interfaces in Go, we identified key
    - Define interfaces where mocking external dependencies is needed.
    - Focused interfaces simplify testing by limiting mock complexity.
 6. **Avoid Exporting Interfaces Prematurely**
-   - Keep interfaces unexported unless they’re part of a public API.
+   - Keep interfaces unexported unless they're part of a public API.
    - Unexported interfaces allow internal changes without breaking external code.
 7. **Implicit Implementation**
-   - Rely on Go’s implicit interface implementation, avoiding explicit declarations.
+   - Rely on Go's implicit interface implementation, avoiding explicit declarations.
    - Structs automatically satisfy an interface if they implement its methods.
 8. **Use Empty Interfaces Sparingly**
    - Avoid interface{} unless absolutely necessary (e.g., generic containers).
@@ -151,7 +151,7 @@ The key insight: Let each component do its job. Instead of mocking internal deta
 
 ---
 
-## Worker Pool Testing Insights (2024-01-03)
+## Worker Pool Testing Insights (2025-01-03)
 
 While debugging worker pool tests, we encountered a subtle issue with job counter semantics that revealed several important lessons:
 

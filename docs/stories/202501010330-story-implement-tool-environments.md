@@ -1,7 +1,9 @@
 # Story: Implement Tool Environment Handling
 
 ## Context
+
 Tools can specify environment requirements in their --usage output:
+
 ```json
 {
   "env": {
@@ -15,29 +17,35 @@ Tools can specify environment requirements in their --usage output:
 ```
 
 These are configured in config.yaml:
+
 ```yaml
 tools:
   web_search:
     env:
-      API_KEY: "key-123"
+      API_KEY: 'key-123'
 ```
 
 However, environment handling is not fully implemented:
+
 1. Tool env requirements are loaded but not validated
 2. Config values aren't passed to tool execution
 3. Default values aren't used as fallbacks
 
 ## Goal
+
 Implement complete environment handling for tools to enable secure and configurable external service integration.
 
 ## Requirements
+
 1. Environment Loading:
+
    - Parse env requirements from --usage
    - Load env values from config.yaml
    - Support default values
    - Validate types and requirements
 
 2. Environment Resolution:
+
    - Match config values to requirements
    - Apply default values when needed
    - Validate all required vars are set
@@ -52,6 +60,7 @@ Implement complete environment handling for tools to enable secure and configura
 ## Technical Changes
 
 1. Environment Resolution:
+
 ```go
 type EnvResolver struct {
     config  *config.Config
@@ -91,6 +100,7 @@ func (r *EnvResolver) ResolveToolEnv(tool *tool.Tool) (map[string]string, error)
 ```
 
 2. Tool Execution:
+
 ```go
 func (t *Tool) Execute(input []byte, resolver *EnvResolver) ([]byte, error) {
     // Resolve environment
@@ -111,6 +121,7 @@ func (t *Tool) Execute(input []byte, resolver *EnvResolver) ([]byte, error) {
 ```
 
 3. Health Checking:
+
 ```go
 func (t *Tool) CheckHealth(resolver *EnvResolver) error {
     // Resolve environment first
@@ -131,16 +142,19 @@ func (t *Tool) CheckHealth(resolver *EnvResolver) error {
 ```
 
 ## Success Criteria
+
 1. Tool Configuration:
+
 ```yaml
 tools:
   web_search:
     env:
-      API_KEY: "key-123"
+      API_KEY: 'key-123'
       TIMEOUT: 30
 ```
 
 2. Tool Execution:
+
 ```go
 // All env vars provided
 result, err := tool.Execute(input, resolver)
@@ -162,6 +176,7 @@ if err != nil {
 ```
 
 ## Non-Goals
+
 1. Dynamic env updates
 2. Environment inheritance
 3. Environment templates
@@ -169,7 +184,9 @@ if err != nil {
 5. Environment validation beyond types
 
 ## Testing Plan
+
 1. Unit Tests:
+
    - Environment resolution
    - Default handling
    - Type validation
@@ -182,39 +199,47 @@ if err != nil {
    - Default resolution
 
 ## Risks
+
 1. Security implications
 2. Type conversion errors
 3. Default value handling
 4. Environment pollution
 
 ## Future Considerations
+
 1. Secret management
 2. Environment inheritance
 3. Dynamic updates
 4. Validation rules
 
 ## Acceptance Criteria
+
 1. Configuration:
+
 - Tools can specify env requirements
 - Config can provide env values
 - Defaults are properly handled
 - Types are validated
 
 2. Integration:
+
 - Tools receive correct env vars
 - Missing vars are caught
 - Defaults are applied
 - Types are enforced
 
 3. Security:
+
 - Env vars are isolated
 - Secrets are handled safely
 - No env pollution
 - Clear error messages
 
 4. Logging:
+
 ```
-time=2024-01-01T02:25:00Z level=INFO msg="resolving tool env" tool=web_search
-time=2024-01-01T02:25:00Z level=DEBUG msg="using config value" var=API_KEY
-time=2024-01-01T02:25:00Z level=DEBUG msg="using default value" var=TIMEOUT value=30
-time=2024-01-01T02:25:00Z level=INFO msg="tool env resolved" vars=2
+time=2025-01-01T02:25:00Z level=INFO msg="resolving tool env" tool=web_search
+time=2025-01-01T02:25:00Z level=DEBUG msg="using config value" var=API_KEY
+time=2025-01-01T02:25:00Z level=DEBUG msg="using default value" var=TIMEOUT value=30
+time=2025-01-01T02:25:00Z level=INFO msg="tool env resolved" vars=2
+```

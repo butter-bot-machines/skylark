@@ -199,7 +199,7 @@ func main() {
 	json.Unmarshal(input, &data)
 
 	// Return mock result
-	fmt.Printf(` + "`" + `{"datetime":"2024-01-05T10:00:00Z"}` + "`" + `)
+	fmt.Printf(` + "`" + `{"datetime":"2025-01-05T10:00:00Z"}` + "`" + `)
 }`
 
 	err = os.WriteFile(filepath.Join(toolDir, "main.go"), []byte(mainGo), 0644)
@@ -273,14 +273,14 @@ func main() {
 	}
 
 	// Mock provider response for tool usage
-	mockProvider.response = "The current time is 2024-01-05T10:00:00Z"
+	mockProvider.response = "The current time is 2025-01-05T10:00:00Z"
 
 	response, err = assistant.Process(cmd)
 	if err != nil {
 		t.Fatalf("Process() with tool error = %v", err)
 	}
 
-	if response != "The current time is 2024-01-05T10:00:00Z" {
-		t.Errorf("Process() with tool response = %v, want 'The current time is 2024-01-05T10:00:00Z'", response)
+	if response != "The current time is 2025-01-05T10:00:00Z" {
+		t.Errorf("Process() with tool response = %v, want 'The current time is 2025-01-05T10:00:00Z'", response)
 	}
 }

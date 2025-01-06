@@ -263,11 +263,11 @@ pool, err := worker.NewPool(worker.Options{
 ## References
 
 1. Related Stories:
-   - [202401020546](202401020546-story-improve-testability.md)
-   - [202401020548](202401020548-story-identify-coupling-patterns.md)
-   - [202401020556](202401020556-analyze-core-coupling.md)
-   - [202401020557](202401020557-implement-error-abstraction.md)
-   - [202401020558](202401020558-implement-security-abstraction.md)
+   - [202501020546](202501020546-story-improve-testability.md)
+   - [202501020548](202501020548-story-identify-coupling-patterns.md)
+   - [202501020556](202501020556-analyze-core-coupling.md)
+   - [202501020557](202501020557-implement-error-abstraction.md)
+   - [202501020558](202501020558-implement-security-abstraction.md)
 
 2. Documentation:
    - [Architecture](../architecture.md)

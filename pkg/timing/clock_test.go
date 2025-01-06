@@ -8,7 +8,7 @@ import (
 func TestClock_BasicOperations(t *testing.T) {
 	t.Run("Now", func(t *testing.T) {
 		mock := NewMock()
-		now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		mock.Set(now)
 
 		if got := mock.Now(); !got.Equal(now) {
@@ -18,7 +18,7 @@ func TestClock_BasicOperations(t *testing.T) {
 
 	t.Run("After", func(t *testing.T) {
 		mock := NewMock()
-		now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		mock.Set(now)
 
 		ch := mock.After(time.Second)
@@ -44,7 +44,7 @@ func TestClock_BasicOperations(t *testing.T) {
 func TestClock_TimerOperations(t *testing.T) {
 	t.Run("NewTimer", func(t *testing.T) {
 		mock := NewMock()
-		now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		mock.Set(now)
 
 		timer := mock.NewTimer(time.Second)
@@ -98,7 +98,7 @@ func TestClock_TimerOperations(t *testing.T) {
 func TestClock_TickerOperations(t *testing.T) {
 	t.Run("NewTicker", func(t *testing.T) {
 		mock := NewMock()
-		now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 		mock.Set(now)
 
 		ticker := mock.NewTicker(time.Second)
@@ -152,7 +152,7 @@ func TestClock_TickerOperations(t *testing.T) {
 
 func TestClock_AfterFunc(t *testing.T) {
 	mock := NewMock()
-	now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.Set(now)
 
 	called := false

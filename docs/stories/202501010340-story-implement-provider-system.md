@@ -217,6 +217,6 @@ if err != nil {
 
 4. Logging:
 ```
-time=2024-01-01T02:26:00Z level=INFO msg="initializing provider system"
-time=2024-01-01T02:26:00Z level=DEBUG msg="loading provider" name=openai
-time=2024-01-01T02:26:01Z level=INFO msg="provider system ready" providers=1
+time=2025-01-01T02:26:00Z level=INFO msg="initializing provider system"
+time=2025-01-01T02:26:00Z level=DEBUG msg="loading provider" name=openai
+time=2025-01-01T02:26:01Z level=INFO msg="provider system ready" providers=1

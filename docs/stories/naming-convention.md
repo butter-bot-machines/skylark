@@ -22,7 +22,7 @@ Where:
 
 - YYYYMMDDHHMM: Timestamp in 24-hour format
 
-  - YYYY: Year (2024)
+  - YYYY: Year (2025)
   - MM: Month (01-12)
   - DD: Day (01-31)
   - HH: Hour (00-23)
@@ -39,9 +39,9 @@ Where:
 For example:
 
 ```
-202401010146-chore-fix-cpu-profile-warning.md
-202401010242-chore-fix-tool-naming.md
-202401010341-story-implement-assistant-provider-integration.md
+202501010146-chore-fix-cpu-profile-warning.md
+202501010242-chore-fix-tool-naming.md
+202501010341-story-implement-assistant-provider-integration.md
 ```
 
 ## Consequences

@@ -1,7 +1,9 @@
 # Story: Implement Error System Abstraction (✓ Completed)
 
 ## Status
-Completed on January 2, 2024 at 06:00
+
+Completed on January 2, 2025 at 06:00
+
 - Defined error interfaces
 - Implemented concrete types
 - Added helper functions
@@ -9,7 +11,9 @@ Completed on January 2, 2024 at 06:00
 - All tests passing
 
 ## Context
+
 The error system had tight coupling in several areas:
+
 - Fixed error types
 - Direct stack traces
 - Fixed error formatting
@@ -18,9 +22,11 @@ The error system had tight coupling in several areas:
 This made it difficult to test error scenarios, mock error behavior, customize error handling, and extend error types.
 
 ## Goal
+
 Create a flexible error system with clear interfaces that supports testing, customization, and extension.
 
 ## Requirements
+
 1. Error types should be extensible
 2. Stack traces should be captured accurately
 3. Error context should be supported
@@ -31,6 +37,7 @@ Create a flexible error system with clear interfaces that supports testing, cust
 ## Technical Changes
 
 1. Interface Definitions:
+
 ```go
 type ErrorType interface {
     Name() string
@@ -53,6 +60,7 @@ type Error interface {
 ```
 
 2. Registry System:
+
 ```go
 type Registry interface {
     Register(name string, code int) ErrorType
@@ -62,6 +70,7 @@ type Registry interface {
 ```
 
 3. Helper Functions:
+
 ```go
 func New(errType ErrorType, msg string, args ...interface{}) Error
 func Wrap(err error, msg string, args ...interface{}) Error
@@ -72,7 +81,9 @@ func IsTimeout(err error) bool
 ```
 
 ## Success Criteria
+
 1. Interface Usage:
+
 ```go
 // Creating errors
 err := errors.New(errors.ConfigError, "invalid config: %s", path)
@@ -93,6 +104,7 @@ return agg.Error()
 ```
 
 2. Stack Traces:
+
 ```
 Error: failed to load config: invalid config: /etc/app.conf
 Stack trace:
@@ -101,6 +113,7 @@ Stack trace:
 ```
 
 3. Error Types:
+
 - ConfigError
 - ToolError
 - ResourceError
@@ -109,7 +122,9 @@ Stack trace:
 - UnknownError
 
 ## Testing Plan
+
 1. Unit Tests:
+
    - Error creation and wrapping
    - Context management
    - Stack trace capture
@@ -124,12 +139,14 @@ Stack trace:
    - Memory usage
 
 ## Risks
+
 1. Performance impact of stack traces
 2. Memory usage with many errors
 3. Thread safety in registry
 4. Backward compatibility
 
 ## Acceptance Criteria
+
 1. All interfaces implemented
 2. All tests passing
 3. Stack traces show correct frames
@@ -139,6 +156,7 @@ Stack trace:
 7. Proper panic recovery
 
 ## Future Considerations
+
 1. Error type hierarchies
 2. Custom formatters
 3. Error filtering
@@ -147,10 +165,12 @@ Stack trace:
 6. Custom stack trace handling
 
 ## References
+
 1. Related Stories:
-   - [202401020546](202401020546-story-improve-testability.md)
-   - [202401020548](202401020548-story-identify-coupling-patterns.md)
-   - [202401020556](202401020556-analyze-core-coupling.md)
+
+   - [202501020546](202501020546-story-improve-testability.md)
+   - [202501020548](202501020548-story-identify-coupling-patterns.md)
+   - [202501020556](202501020556-analyze-core-coupling.md)
 
 2. Documentation:
    - [Architecture](../architecture.md)

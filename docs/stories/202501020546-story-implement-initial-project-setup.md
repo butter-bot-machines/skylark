@@ -1,4 +1,4 @@
-# 202401020100-story-implement-initial-project-setup.md
+# 202501020100-story-implement-initial-project-setup.md
 
 ## Context
 Users need a simple way to start using Skylark with minimal configuration while maintaining a clear path for advanced usage.

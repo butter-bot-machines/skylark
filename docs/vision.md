@@ -208,7 +208,7 @@ skai init my_project
 - Example appended text:  
   ```
   !What's today's date?
-  > The current date and time is 2024-01-05T10:00:00Z
+  > The current date and time is 2025-01-05T10:00:00Z
   ```
 
 ## 7. Configuration & Customization

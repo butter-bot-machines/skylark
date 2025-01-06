@@ -1,6 +1,6 @@
 # Assistant-Specific Configurations Not Respected (✓ Completed)
 
-> Completed on January 5, 2024 at 11:53
+> Completed on January 5, 2025 at 11:53
 > - Implemented proper model config handling
 > - Added provider registry support
 > - Improved test infrastructure
@@ -95,7 +95,7 @@ The system now properly respects assistant-specific configurations:
 
 ## Follow-up Work
 
-Created new chore story (202401051058-chore-refactor-provider-config.md) to improve the configuration structure by:
+Created new chore story (202501051058-chore-refactor-provider-config.md) to improve the configuration structure by:
 1. Moving to hierarchical provider/model structure
 2. Eliminating API key duplication
 3. Removing default provider concept

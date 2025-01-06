@@ -251,8 +251,8 @@ func (a *Assistant) handleToolCalls(ctx context.Context, resp *Response) (*Respo
 4. Logging:
 
 ```
-time=2024-01-01T02:27:00Z level=INFO msg="processing command" assistant=default
-time=2024-01-01T02:27:00Z level=DEBUG msg="building context" tools=2
-time=2024-01-01T02:27:01Z level=INFO msg="executing tool" name=summarize
-time=2024-01-01T02:27:02Z level=INFO msg="command completed" duration=2s
+time=2025-01-01T02:27:00Z level=INFO msg="processing command" assistant=default
+time=2025-01-01T02:27:00Z level=DEBUG msg="building context" tools=2
+time=2025-01-01T02:27:01Z level=INFO msg="executing tool" name=summarize
+time=2025-01-01T02:27:02Z level=INFO msg="command completed" duration=2s
 ```

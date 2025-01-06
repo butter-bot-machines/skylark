@@ -33,7 +33,7 @@ Implement tool description overrides to allow assistants to customize tool descr
    - Handle empty descriptions
 
 Notes:
-* Schema.Schema.Description may have been renamed by chore:202401010223-fix-tool-naming
+* Schema.Schema.Description may have been renamed by chore:202501010223-fix-tool-naming
 
 ## Technical Changes
 
@@ -160,6 +160,6 @@ tools:
 
 4. Logging:
 ```
-time=2024-01-01T02:24:00Z level=INFO msg="loading assistant" name=research
-time=2024-01-01T02:24:00Z level=DEBUG msg="tool override" tool=summarize description="Research-focused summarization"
-time=2024-01-01T02:24:00Z level=INFO msg="assistant loaded" tools=2
+time=2025-01-01T02:24:00Z level=INFO msg="loading assistant" name=research
+time=2025-01-01T02:24:00Z level=DEBUG msg="tool override" tool=summarize description="Research-focused summarization"
+time=2025-01-01T02:24:00Z level=INFO msg="assistant loaded" tools=2
