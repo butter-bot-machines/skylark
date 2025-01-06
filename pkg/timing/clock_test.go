@@ -10,7 +10,7 @@ func TestClock_BasicOperations(t *testing.T) {
 		mock := NewMock()
 		now := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 		mock.Set(now)
-		
+
 		if got := mock.Now(); !got.Equal(now) {
 			t.Errorf("Now() = %v, want %v", got, now)
 		}

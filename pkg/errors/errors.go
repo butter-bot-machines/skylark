@@ -73,7 +73,7 @@ func NewRegistry() Registry {
 func NewPanicHandler(reg Registry, logger logging.Logger) PanicHandler {
 	return &panicHandler{
 		registry: reg,
-		logger:  logger,
+		logger:   logger,
 	}
 }
 

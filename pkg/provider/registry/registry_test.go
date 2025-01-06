@@ -33,22 +33,22 @@ func TestRegistry(t *testing.T) {
 			modelSpec:       "gpt-4",
 			defaultProvider: "openai",
 			wantProvider:    "openai",
-			wantModel:      "gpt-4",
-			wantErr:        false,
+			wantModel:       "gpt-4",
+			wantErr:         false,
 		},
 		{
 			name:            "provider:model format",
 			modelSpec:       "anthropic:claude-2",
 			defaultProvider: "openai",
 			wantProvider:    "anthropic",
-			wantModel:      "claude-2",
-			wantErr:        false,
+			wantModel:       "claude-2",
+			wantErr:         false,
 		},
 		{
 			name:            "unknown provider",
 			modelSpec:       "unknown:model",
 			defaultProvider: "openai",
-			wantErr:        true,
+			wantErr:         true,
 		},
 	}
 

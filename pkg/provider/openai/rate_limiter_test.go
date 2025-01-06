@@ -15,7 +15,7 @@ func TestTokenBucketLimiter(t *testing.T) {
 		},
 		requestTokens: 2,
 		tokenTokens:   100,
-		lastReset:    time.Now(),
+		lastReset:     time.Now(),
 	}
 
 	// Test request limiting
@@ -36,7 +36,7 @@ func TestTokenBucketLimiter(t *testing.T) {
 		// Third request should block
 		done := make(chan struct{}, 1) // Buffered to avoid goroutine leak
 		cleanup := make(chan struct{})
-		
+
 		go func() {
 			defer close(cleanup)
 			limiter.Wait(ctx) // Will be cancelled by deferred cancel()
@@ -69,7 +69,7 @@ func TestTokenBucketLimiter(t *testing.T) {
 			},
 			requestTokens: 10,
 			tokenTokens:   100,
-			lastReset:    time.Now(),
+			lastReset:     time.Now(),
 		}
 
 		// First batch of tokens should succeed
@@ -98,7 +98,7 @@ func TestTokenBucketLimiter(t *testing.T) {
 			},
 			requestTokens: 1,
 			tokenTokens:   100,
-			lastReset:    time.Now(),
+			lastReset:     time.Now(),
 		}
 
 		// Use up the request
@@ -126,7 +126,7 @@ func TestTokenBucketLimiter(t *testing.T) {
 			},
 			requestTokens: 0,
 			tokenTokens:   0,
-			lastReset:    time.Now().Add(-61 * time.Second),
+			lastReset:     time.Now().Add(-61 * time.Second),
 		}
 
 		// Should succeed after reset

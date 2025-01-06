@@ -148,6 +148,7 @@ func NewPool(opts worker.Options) (worker.Pool, error) {
 
 	return p, nil
 }
+
 // WithClock sets a custom clock for the worker pool
 func (p *poolImpl) WithClock(clock timing.Clock) worker.Pool {
 	p.clock = clock

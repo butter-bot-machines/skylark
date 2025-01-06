@@ -7,11 +7,11 @@ type EventType string
 
 const (
 	// Key management events
-	EventKeyAccess    EventType = "key_access"
-	EventKeyCreated   EventType = "key_created"
-	EventKeyRotated   EventType = "key_rotated"
-	EventKeyRemoved   EventType = "key_removed"
-	EventKeyExpired   EventType = "key_expired"
+	EventKeyAccess  EventType = "key_access"
+	EventKeyCreated EventType = "key_created"
+	EventKeyRotated EventType = "key_rotated"
+	EventKeyRemoved EventType = "key_removed"
+	EventKeyExpired EventType = "key_expired"
 
 	// File operation events
 	EventFileAccess   EventType = "file_access"
@@ -20,9 +20,9 @@ const (
 	EventFileRemoved  EventType = "file_removed"
 
 	// Resource events
-	EventMemoryLimit  EventType = "memory_limit"
-	EventCPULimit     EventType = "cpu_limit"
-	EventDiskLimit    EventType = "disk_limit"
+	EventMemoryLimit EventType = "memory_limit"
+	EventCPULimit    EventType = "cpu_limit"
+	EventDiskLimit   EventType = "disk_limit"
 
 	// Security events
 	EventAuthFailure    EventType = "auth_failure"
@@ -43,21 +43,21 @@ const (
 // Event represents a security event
 type Event struct {
 	ID        string                 `json:"id"`
-	Timestamp time.Time             `json:"timestamp"`
-	Type      EventType             `json:"type"`
-	Severity  Severity              `json:"severity"`
-	Source    string                `json:"source"`
-	Details   string                `json:"details"`
+	Timestamp time.Time              `json:"timestamp"`
+	Type      EventType              `json:"type"`
+	Severity  Severity               `json:"severity"`
+	Source    string                 `json:"source"`
+	Details   string                 `json:"details"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // ResourceUsage represents resource consumption
 type ResourceUsage struct {
-	MemoryBytes   int64   `json:"memory_bytes"`
-	CPUPercent    float64 `json:"cpu_percent"`
-	OpenFiles     int     `json:"open_files"`
-	NetworkBytes  int64   `json:"network_bytes"`
-	OpCount       int     `json:"op_count"`
+	MemoryBytes  int64   `json:"memory_bytes"`
+	CPUPercent   float64 `json:"cpu_percent"`
+	OpenFiles    int     `json:"open_files"`
+	NetworkBytes int64   `json:"network_bytes"`
+	OpCount      int     `json:"op_count"`
 }
 
 // ResourceLimits defines resource constraints

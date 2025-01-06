@@ -19,17 +19,17 @@ type TokenBucketLimiter struct {
 
 	requestTokens int
 	tokenTokens   int
-	lastReset    time.Time
-	mu           sync.Mutex
+	lastReset     time.Time
+	mu            sync.Mutex
 }
 
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter(config RateLimitConfig) RateLimiting {
 	return &TokenBucketLimiter{
-		config:       config,
+		config:        config,
 		requestTokens: config.RequestsPerMinute,
 		tokenTokens:   config.TokensPerMinute,
-		lastReset:    time.Now(),
+		lastReset:     time.Now(),
 	}
 }
 
@@ -49,7 +49,7 @@ func (r *TokenBucketLimiter) Wait(ctx context.Context) error {
 	if r.requestTokens <= 0 {
 		// Calculate wait time
 		waitTime := time.Minute - time.Since(r.lastReset)
-		
+
 		// Wait with context
 		select {
 		case <-ctx.Done():
@@ -81,8 +81,8 @@ func (r *TokenBucketLimiter) AddTokens(count int) error {
 
 	// Check token limit
 	if r.tokenTokens < count {
-		return fmt.Errorf("token limit exceeded: used %d/%d this minute", 
-			r.config.TokensPerMinute-r.tokenTokens+count, 
+		return fmt.Errorf("token limit exceeded: used %d/%d this minute",
+			r.config.TokensPerMinute-r.tokenTokens+count,
 			r.config.TokensPerMinute)
 	}
 

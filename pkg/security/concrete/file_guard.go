@@ -14,11 +14,11 @@ import (
 )
 
 var (
-	ErrAccessDenied     = errors.New("access denied")
-	ErrInvalidPath      = errors.New("invalid path")
-	ErrFileTooLarge     = errors.New("file too large")
-	ErrSymlinkDenied    = errors.New("symlink traversal not allowed")
-	ErrBlockedPath      = errors.New("path is blocked")
+	ErrAccessDenied  = errors.New("access denied")
+	ErrInvalidPath   = errors.New("invalid path")
+	ErrFileTooLarge  = errors.New("file too large")
+	ErrSymlinkDenied = errors.New("symlink traversal not allowed")
+	ErrBlockedPath   = errors.New("path is blocked")
 )
 
 // fileGuard implements security.FileGuard

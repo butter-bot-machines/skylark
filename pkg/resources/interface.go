@@ -30,13 +30,13 @@ type Limits struct {
 
 // Error types for resource operations
 var (
-	ErrInvalidLimit     = Error{"invalid resource limit"}
-	ErrLimitExceeded    = Error{"resource limit exceeded"}
-	ErrThreadLocked     = Error{"thread already locked"}
-	ErrThreadNotLocked  = Error{"thread not locked"}
-	ErrProfileActive    = Error{"profiling already active"}
-	ErrProfileInactive  = Error{"profiling not active"}
-	ErrUnsupported      = Error{"operation not supported"}
+	ErrInvalidLimit    = Error{"invalid resource limit"}
+	ErrLimitExceeded   = Error{"resource limit exceeded"}
+	ErrThreadLocked    = Error{"thread already locked"}
+	ErrThreadNotLocked = Error{"thread not locked"}
+	ErrProfileActive   = Error{"profiling already active"}
+	ErrProfileInactive = Error{"profiling not active"}
+	ErrUnsupported     = Error{"operation not supported"}
 )
 
 // Error represents a resource error
@@ -51,9 +51,9 @@ func (e Error) Error() string {
 // DefaultLimits returns the default resource limits
 func DefaultLimits() Limits {
 	return Limits{
-		MaxMemory:   1 << 30,         // 1GB
-		MaxCPU:      1.0,             // 1 core
+		MaxMemory:   1 << 30,          // 1GB
+		MaxCPU:      1.0,              // 1 core
 		MaxThreads:  runtime.NumCPU(), // One thread per CPU
-		ProfileRate: 0,               // No profiling
+		ProfileRate: 0,                // No profiling
 	}
 }

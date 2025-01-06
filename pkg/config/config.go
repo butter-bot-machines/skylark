@@ -10,14 +10,14 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	Version     string                     `yaml:"version"`
-	Environment EnvironmentConfig          `yaml:"environment"`
-	Models      map[string]ModelConfigSet  `yaml:"models"`
-	Tools       map[string]ToolConfig      `yaml:"tools"`
-	Workers     WorkerConfig               `yaml:"workers"`
+	Version     string                    `yaml:"version"`
+	Environment EnvironmentConfig         `yaml:"environment"`
+	Models      map[string]ModelConfigSet `yaml:"models"`
+	Tools       map[string]ToolConfig     `yaml:"tools"`
+	Workers     WorkerConfig              `yaml:"workers"`
 	FileWatch   FileWatchConfig           `yaml:"file_watch"`
 	WatchPaths  []string                  `yaml:"watch_paths"`
-	Security    types.SecurityConfig       `yaml:"security"`
+	Security    types.SecurityConfig      `yaml:"security"`
 }
 
 // EnvironmentConfig defines environment-specific settings
@@ -138,7 +138,7 @@ func (c *Config) FromMap(data map[string]interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal map: %w", err)
 	}
-	
+
 	if err := yaml.Unmarshal(yamlData, c); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}

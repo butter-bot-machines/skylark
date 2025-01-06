@@ -102,7 +102,7 @@ type Process struct {
 	stderr   io.Writer
 	clock    timing.Clock
 	cancel   context.CancelFunc // For CPU time limit
-	timer    timing.Timer      // For CPU time limit
+	timer    timing.Timer       // For CPU time limit
 }
 
 // Start marks the process as running

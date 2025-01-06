@@ -65,9 +65,9 @@ type clockAdapter struct {
 	c clock.Clock
 }
 
-func (c *clockAdapter) Now() time.Time                           { return c.c.Now() }
-func (c *clockAdapter) After(d time.Duration) <-chan time.Time   { return c.c.After(d) }
-func (c *clockAdapter) Sleep(d time.Duration)                    { c.c.Sleep(d) }
+func (c *clockAdapter) Now() time.Time                         { return c.c.Now() }
+func (c *clockAdapter) After(d time.Duration) <-chan time.Time { return c.c.After(d) }
+func (c *clockAdapter) Sleep(d time.Duration)                  { c.c.Sleep(d) }
 func (c *clockAdapter) NewTimer(d time.Duration) Timer {
 	t := c.c.Timer(d)
 	return &timerAdapter{t}
@@ -95,8 +95,8 @@ type timerAdapter struct {
 	t *clock.Timer
 }
 
-func (t *timerAdapter) C() <-chan time.Time { return t.t.C }
-func (t *timerAdapter) Stop() bool          { return t.t.Stop() }
+func (t *timerAdapter) C() <-chan time.Time        { return t.t.C }
+func (t *timerAdapter) Stop() bool                 { return t.t.Stop() }
 func (t *timerAdapter) Reset(d time.Duration) bool { return t.t.Reset(d) }
 
 // tickerAdapter adapts *clock.Ticker to our Ticker interface
@@ -117,6 +117,6 @@ func NewMock() MockClock {
 	mock := clock.NewMock()
 	return &mockClockAdapter{
 		clockAdapter: clockAdapter{mock},
-		mock:        mock,
+		mock:         mock,
 	}
 }

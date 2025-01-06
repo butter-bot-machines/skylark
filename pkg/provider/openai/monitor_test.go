@@ -258,7 +258,7 @@ func TestProviderMonitoring(t *testing.T) {
 			t.Errorf("Expected 0 failures, got %d", monitor.failures)
 		}
 
-		expectedPrompt := 25    // 10 + 15
+		expectedPrompt := 25     // 10 + 15
 		expectedCompletion := 45 // 20 + 25
 		expectedTotal := 70      // 30 + 40
 

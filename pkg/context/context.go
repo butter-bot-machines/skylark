@@ -16,8 +16,8 @@ type Reference struct {
 // Context represents assembled context from references
 type Context struct {
 	References map[string]string // Map of header to content
-	TotalSize  int              // Total size in characters
-	TokenCount int              // Estimated token count
+	TotalSize  int               // Total size in characters
+	TokenCount int               // Estimated token count
 }
 
 // HeaderPattern matches Markdown headers with level capture
@@ -43,7 +43,7 @@ func ParseReferences(content string) []Reference {
 			currentRef = &Reference{
 				Header:    strings.TrimSpace(matches[2]),
 				Level:     len(matches[1]), // Number of # characters
-				StartLine: i + 1,          // Content starts after header
+				StartLine: i + 1,           // Content starts after header
 			}
 		}
 	}

@@ -22,33 +22,33 @@ More content`
 	refs := ParseReferences(content)
 
 	tests := []struct {
-		name      string
-		header    string
-		level     int
+		name       string
+		header     string
+		level      int
 		hasContent bool
 	}{
 		{
-			name:      "top level header",
-			header:    "Header 1",
-			level:     1,
+			name:       "top level header",
+			header:     "Header 1",
+			level:      1,
 			hasContent: true,
 		},
 		{
-			name:      "second level header",
-			header:    "Header 2",
-			level:     2,
+			name:       "second level header",
+			header:     "Header 2",
+			level:      2,
 			hasContent: true,
 		},
 		{
-			name:      "third level header",
-			header:    "Header 3",
-			level:     3,
+			name:       "third level header",
+			header:     "Header 3",
+			level:      3,
 			hasContent: true,
 		},
 		{
-			name:      "another second level header",
-			header:    "Header 4",
-			level:     2,
+			name:       "another second level header",
+			header:     "Header 4",
+			level:      2,
 			hasContent: true,
 		},
 	}
@@ -87,12 +87,12 @@ This is content for section 2.
 This is another subsection.`
 
 	tests := []struct {
-		name       string
-		headers    []string
-		maxSize    int
-		maxTokens  int
-		wantCount  int
-		wantError  bool
+		name      string
+		headers   []string
+		maxSize   int
+		maxTokens int
+		wantCount int
+		wantError bool
 	}{
 		{
 			name:      "single section",
@@ -216,23 +216,23 @@ Content 3`
 
 	// Test parent header resolution
 	tests := []struct {
-		name     string
-		header   string
+		name       string
+		header     string
 		wantParent string
 	}{
 		{
-			name:     "top level has no parent",
-			header:   "Top Level",
+			name:       "top level has no parent",
+			header:     "Top Level",
 			wantParent: "",
 		},
 		{
-			name:     "section has top level parent",
-			header:   "Section 1",
+			name:       "section has top level parent",
+			header:     "Section 1",
 			wantParent: "Top Level",
 		},
 		{
-			name:     "subsection has section parent",
-			header:   "Subsection 1.1",
+			name:       "subsection has section parent",
+			header:     "Subsection 1.1",
 			wantParent: "Section 1",
 		},
 	}

@@ -12,8 +12,8 @@ import (
 
 	"github.com/butter-bot-machines/skylark/pkg/logging"
 	"github.com/butter-bot-machines/skylark/pkg/parser"
-	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/provider"
+	"github.com/butter-bot-machines/skylark/pkg/provider/registry"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
 	"github.com/butter-bot-machines/skylark/pkg/tool"
 	"gopkg.in/yaml.v3"
@@ -26,16 +26,16 @@ type toolManager interface {
 
 // Assistant represents a configured assistant
 type Assistant struct {
-	Name            string            `yaml:"name"`
-	Description     string            `yaml:"description"`
-	Model           string            `yaml:"model"`
-	Tools           []string          `yaml:"tools,omitempty"`
-	Prompt          string            `yaml:"-"` // Loaded from prompt.md content
-	toolMgr         toolManager       // Tool manager
+	Name            string             `yaml:"name"`
+	Description     string             `yaml:"description"`
+	Model           string             `yaml:"model"`
+	Tools           []string           `yaml:"tools,omitempty"`
+	Prompt          string             `yaml:"-"` // Loaded from prompt.md content
+	toolMgr         toolManager        // Tool manager
 	providers       *registry.Registry // Provider registry
-	defaultProvider string            // Default provider name
-	sandbox         *sandbox.Sandbox  // Tool sandbox
-	logger          *slog.Logger      // Logger
+	defaultProvider string             // Default provider name
+	sandbox         *sandbox.Sandbox   // Tool sandbox
+	logger          *slog.Logger       // Logger
 }
 
 // Manager handles loading and managing assistants
@@ -64,7 +64,7 @@ func NewManager(basePath string, toolMgr *tool.Manager, providers *registry.Regi
 		providers:       providers,
 		defaultProvider: defaultProvider,
 		sandbox:         sb,
-		logger:         logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
+		logger:          logging.NewLogger(&logging.Options{Level: slog.LevelDebug}),
 	}, nil
 }
 

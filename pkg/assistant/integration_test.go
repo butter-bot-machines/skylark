@@ -145,8 +145,8 @@ func TestAssistantProviderIntegration(t *testing.T) {
 			responses: []provider.Response{
 				{Content: "Tool timed out"},
 			},
-			toolResult:   `{"mode":"timeout"}`,
-			wantError:    true,
+			toolResult: `{"mode":"timeout"}`,
+			wantError:  true,
 		},
 	}
 

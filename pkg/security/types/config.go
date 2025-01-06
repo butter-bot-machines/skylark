@@ -23,10 +23,10 @@ type AuditLogConfig struct {
 
 // SecurityConfig defines security settings
 type SecurityConfig struct {
-	AllowedPaths    []string             `yaml:"allowed_paths"`
-	MaxFileSize     int64                `yaml:"max_file_size"`
+	AllowedPaths    []string              `yaml:"allowed_paths"`
+	MaxFileSize     int64                 `yaml:"max_file_size"`
 	FilePermissions FilePermissionsConfig `yaml:"file_permissions"`
-	EncryptionKey   string               `yaml:"encryption_key"`
-	KeyStoragePath  string               `yaml:"key_storage_path"`
-	AuditLog        AuditLogConfig       `yaml:"audit_log"`
+	EncryptionKey   string                `yaml:"encryption_key"`
+	KeyStoragePath  string                `yaml:"key_storage_path"`
+	AuditLog        AuditLogConfig        `yaml:"audit_log"`
 }

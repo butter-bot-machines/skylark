@@ -22,9 +22,9 @@ func TestAuditLog(t *testing.T) {
 		Security: types.SecurityConfig{
 			AuditLog: types.AuditLogConfig{
 				Enabled:       true,
-				Path:         logPath,
+				Path:          logPath,
 				RetentionDays: 30,
-				Events:       []string{string(types.EventKeyAccess), string(types.EventFileAccess)},
+				Events:        []string{string(types.EventKeyAccess), string(types.EventFileAccess)},
 			},
 		},
 	}
@@ -259,7 +259,7 @@ func TestAuditLogErrors(t *testing.T) {
 			Security: types.SecurityConfig{
 				AuditLog: types.AuditLogConfig{
 					Enabled: true,
-					Path:   "/nonexistent/path/audit.log",
+					Path:    "/nonexistent/path/audit.log",
 				},
 			},
 		}
@@ -276,7 +276,7 @@ func TestAuditLogErrors(t *testing.T) {
 			Security: types.SecurityConfig{
 				AuditLog: types.AuditLogConfig{
 					Enabled: false,
-					Path:   "audit.log",
+					Path:    "audit.log",
 				},
 			},
 		}

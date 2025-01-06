@@ -167,7 +167,7 @@ func (p *Parser) ParseReferences(text string) []string {
 func (p *Parser) ParseBlocks(content string) []Block {
 	var blocks []Block
 	lines := strings.Split(content, "\n")
-	
+
 	var currentBlock *Block
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
@@ -210,7 +210,7 @@ func (p *Parser) ParseBlocks(content string) []Block {
 				Level:   level,
 				Content: strings.TrimSpace(trimmed[level:]),
 			}
-		
+
 		case strings.HasPrefix(trimmed, "-") || strings.HasPrefix(trimmed, "*"):
 			if currentBlock != nil && currentBlock.Type != List {
 				blocks = append(blocks, *currentBlock)
@@ -224,7 +224,7 @@ func (p *Parser) ParseBlocks(content string) []Block {
 			} else {
 				currentBlock.Content += "\n" + trimmed
 			}
-		
+
 		case strings.HasPrefix(trimmed, ">"):
 			if currentBlock != nil && currentBlock.Type != Quote {
 				blocks = append(blocks, *currentBlock)
@@ -239,7 +239,7 @@ func (p *Parser) ParseBlocks(content string) []Block {
 			} else {
 				currentBlock.Content += "\n" + strings.TrimSpace(content)
 			}
-		
+
 		case strings.HasPrefix(trimmed, "|"):
 			if currentBlock != nil && currentBlock.Type != Table {
 				blocks = append(blocks, *currentBlock)
@@ -253,13 +253,13 @@ func (p *Parser) ParseBlocks(content string) []Block {
 			} else {
 				currentBlock.Content += "\n" + trimmed
 			}
-		
+
 		case trimmed == "":
 			if currentBlock != nil {
 				blocks = append(blocks, *currentBlock)
 				currentBlock = nil
 			}
-		
+
 		default:
 			if currentBlock != nil && currentBlock.Type != Paragraph {
 				blocks = append(blocks, *currentBlock)
@@ -306,7 +306,7 @@ func (p *Parser) MatchBlocks(blocks []Block, ref string) []Block {
 func (p *Parser) AssembleContext(blocks []Block, currentIndex int) []Block {
 	var context []Block
 	var parents []Block
-	
+
 	// Find current section's level
 	currentLevel := 0
 	if blocks[currentIndex].Type == Header {

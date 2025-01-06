@@ -78,7 +78,7 @@ func (m *Manager) InitBuiltinTools() error {
 	}
 
 	// Extract to .skai/tools like any other tool
-    toolDir := filepath.Join(m.basePath, "currentdatetime")
+	toolDir := filepath.Join(m.basePath, "currentdatetime")
 	if err := os.MkdirAll(toolDir, 0755); err != nil {
 		return fmt.Errorf("failed to create tool directory: %w", err)
 	}
@@ -90,7 +90,7 @@ func (m *Manager) InitBuiltinTools() error {
 
 	// Let the standard tool manager handle the rest
 	// Initial compilation
-    if err := m.Compile("currentdatetime"); err != nil {
+	if err := m.Compile("currentdatetime"); err != nil {
 		return fmt.Errorf("failed to compile tool: %w", err)
 	}
 
@@ -245,7 +245,7 @@ func (t *Tool) Execute(input []byte, env map[string]string, sb *sandbox.Sandbox)
 
 	// Build environment from schema
 	cmdEnv := make([]string, 0, len(t.Schema.Env)+1)
-	
+
 	// Add PATH for binary execution
 	if path := os.Getenv("PATH"); path != "" {
 		cmdEnv = append(cmdEnv, "PATH="+path)

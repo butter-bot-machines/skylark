@@ -17,7 +17,7 @@ func TestParseCommand(t *testing.T) {
 			name:  "basic command",
 			input: "!command text",
 			want: &Command{
-				Assistant:  "command",
+				Assistant: "command",
 				Text:      "text",
 				Original:  "!command text",
 				Context:   make(map[string]Block),
@@ -27,7 +27,7 @@ func TestParseCommand(t *testing.T) {
 			name:  "with whitespace",
 			input: "  !command   text  ",
 			want: &Command{
-				Assistant:  "command",
+				Assistant: "command",
 				Text:      "text",
 				Original:  "!command   text",
 				Context:   make(map[string]Block),
@@ -37,7 +37,7 @@ func TestParseCommand(t *testing.T) {
 			name:  "uppercase assistant",
 			input: "!ASSISTANT help me",
 			want: &Command{
-				Assistant:  "assistant",
+				Assistant: "assistant",
 				Text:      "help me",
 				Original:  "!ASSISTANT help me",
 				Context:   make(map[string]Block),
@@ -48,10 +48,10 @@ func TestParseCommand(t *testing.T) {
 			input: "!assistant analyze # Section 1 # and # Section 2 #",
 			want: &Command{
 				Assistant:  "assistant",
-				Text:      "analyze # Section 1 # and # Section 2 #",
-				Original:  "!assistant analyze # Section 1 # and # Section 2 #",
+				Text:       "analyze # Section 1 # and # Section 2 #",
+				Original:   "!assistant analyze # Section 1 # and # Section 2 #",
 				References: []string{"Section 1", "Section 2"},
-				Context:   make(map[string]Block),
+				Context:    make(map[string]Block),
 			},
 		},
 		{
@@ -123,7 +123,7 @@ Content 2`,
 			},
 		},
 		{
-			name: "code blocks",
+			name:    "code blocks",
 			content: "```\ncode line 1\ncode line 2\n```",
 			want: []Block{
 				{Type: Code, Content: "code line 1\ncode line 2"},

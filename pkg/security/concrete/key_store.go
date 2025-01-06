@@ -28,9 +28,9 @@ var (
 
 const (
 	// Access level bits
-	AccessRead   uint32 = 1 << iota // Read operations
-	AccessWrite                     // Write operations
-	AccessAdmin                     // Administrative operations
+	AccessRead  uint32 = 1 << iota // Read operations
+	AccessWrite                    // Write operations
+	AccessAdmin                    // Administrative operations
 )
 
 // Key represents an API key with metadata

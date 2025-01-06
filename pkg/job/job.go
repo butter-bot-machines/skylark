@@ -24,7 +24,7 @@ type Job interface {
 type FileChangeJob struct {
 	Path      string                   // Path to the file to process
 	Processor processor.ProcessManager // Processor instance to use
-	logger    *slog.Logger            // Logger for this job
+	logger    *slog.Logger             // Logger for this job
 }
 
 // NewFileChangeJob creates a new file change job

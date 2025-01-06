@@ -78,7 +78,7 @@ func (m *Monitor) Metrics() Metrics {
 			Total:      m.totalTokens,
 		},
 		Latency: LatencyMetrics{
-			Average:     avgLatency,
+			Average:    avgLatency,
 			TotalCalls: m.callCount,
 		},
 	}

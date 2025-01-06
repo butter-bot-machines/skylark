@@ -47,17 +47,17 @@ func (m *mockProcessManager) GetDefaultLimits() process.ResourceLimits {
 
 type mockProcess struct{}
 
-func (p *mockProcess) Start() error                        { return nil }
-func (p *mockProcess) Wait() error                        { return nil }
-func (p *mockProcess) Signal(os.Signal) error             { return nil }
-func (p *mockProcess) SetStdin(io.Reader)                 {}
-func (p *mockProcess) SetStdout(io.Writer)                {}
-func (p *mockProcess) SetStderr(io.Writer)                {}
+func (p *mockProcess) Start() error                           { return nil }
+func (p *mockProcess) Wait() error                            { return nil }
+func (p *mockProcess) Signal(os.Signal) error                 { return nil }
+func (p *mockProcess) SetStdin(io.Reader)                     {}
+func (p *mockProcess) SetStdout(io.Writer)                    {}
+func (p *mockProcess) SetStderr(io.Writer)                    {}
 func (p *mockProcess) SetLimits(process.ResourceLimits) error { return nil }
 func (p *mockProcess) GetLimits() process.ResourceLimits      { return process.ResourceLimits{} }
-func (p *mockProcess) ID() int                            { return 0 }
-func (p *mockProcess) Running() bool                      { return false }
-func (p *mockProcess) ExitCode() int                      { return 0 }
+func (p *mockProcess) ID() int                                { return 0 }
+func (p *mockProcess) Running() bool                          { return false }
+func (p *mockProcess) ExitCode() int                          { return 0 }
 
 // BenchmarkWorkerPool measures worker pool performance under load
 func BenchmarkWorkerPool(b *testing.B) {

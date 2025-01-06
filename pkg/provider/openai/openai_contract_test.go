@@ -17,9 +17,9 @@ import (
 
 // mockRateLimiter implements RateLimiting for testing
 type mockRateLimiter struct {
-	waitCalled    bool
-	addTokens     int
-	returnError   error
+	waitCalled  bool
+	addTokens   int
+	returnError error
 }
 
 func (m *mockRateLimiter) Wait(ctx context.Context) error {
@@ -230,11 +230,11 @@ func TestProviderContract(t *testing.T) {
 					"total_tokens":      resp.Usage.TotalTokens,
 					"prompt_tokens_details": map[string]any{
 						"cached_tokens": 0,
-						"audio_tokens": 0,
+						"audio_tokens":  0,
 					},
 					"completion_tokens_details": map[string]any{
 						"reasoning_tokens":           1024,
-						"audio_tokens":              0,
+						"audio_tokens":               0,
 						"accepted_prediction_tokens": 0,
 						"rejected_prediction_tokens": 0,
 					},

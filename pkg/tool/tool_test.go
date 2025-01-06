@@ -305,7 +305,7 @@ func TestToolCaching(t *testing.T) {
 func TestBuiltinTools(t *testing.T) {
 	// Create test directory
 	basePath := t.TempDir()
-	
+
 	// Create manager
 	manager, err := NewManager(basePath)
 	if err != nil {
@@ -326,14 +326,14 @@ func TestBuiltinTools(t *testing.T) {
 	}
 
 	// Test loading currentdatetime tool
-    tool, err := manager.LoadTool("currentdatetime")
+	tool, err := manager.LoadTool("currentdatetime")
 	if err != nil {
 		t.Fatalf("LoadTool() error = %v", err)
 	}
 
 	// Test schema
-    if tool.Schema.Schema.Name != "currentdatetime" {
-        t.Errorf("Tool name = %v, want currentdatetime", tool.Schema.Schema.Name)
+	if tool.Schema.Schema.Name != "currentdatetime" {
+		t.Errorf("Tool name = %v, want currentdatetime", tool.Schema.Schema.Name)
 	}
 
 	// Test execution

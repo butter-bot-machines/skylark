@@ -11,12 +11,12 @@ import (
 
 // Logger implements logging.Logger with in-memory storage
 type Logger struct {
-	mu       sync.RWMutex
-	level    logging.Level
-	output   io.Writer
-	entries  *[]LogEntry // Pointer to share entries between loggers
-	attrs    []interface{}
-	groups   []string
+	mu      sync.RWMutex
+	level   logging.Level
+	output  io.Writer
+	entries *[]LogEntry // Pointer to share entries between loggers
+	attrs   []interface{}
+	groups  []string
 }
 
 // LogEntry represents a stored log entry
@@ -124,7 +124,7 @@ func (l *Logger) GetOutput() io.Writer {
 func (l *Logger) GetEntries() []LogEntry {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	entries := make([]LogEntry, len(*l.entries))
 	copy(entries, *l.entries)

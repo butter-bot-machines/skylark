@@ -139,7 +139,7 @@ func (p *Provider) Send(ctx context.Context, prompt string, opts *provider.Reque
 	model := p.model
 	temperature := p.config.Temperature
 	maxTokens := p.config.MaxTokens
-	
+
 	if opts != nil {
 		if opts.Model != "" {
 			model = opts.Model

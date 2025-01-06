@@ -412,11 +412,11 @@ func (f *file) Write(b []byte) (int, error) {
 func (f *file) Close() error               { return nil }
 func (f *file) Stat() (fs.FileInfo, error) { return f, nil }
 func (f *file) Name() string               { return f.name }
-func (f *file) Size() int64               { return int64(len(f.data)) }
-func (f *file) Mode() fs.FileMode         { return f.mode }
-func (f *file) ModTime() time.Time        { return f.modTime }
-func (f *file) IsDir() bool               { return false }
-func (f *file) Sys() interface{}          { return nil }
+func (f *file) Size() int64                { return int64(len(f.data)) }
+func (f *file) Mode() fs.FileMode          { return f.mode }
+func (f *file) ModTime() time.Time         { return f.modTime }
+func (f *file) IsDir() bool                { return false }
+func (f *file) Sys() interface{}           { return nil }
 
 func (f *file) Seek(offset int64, whence int) (int64, error) {
 	var abs int64
@@ -459,18 +459,18 @@ func (d *dir) Read([]byte) (int, error) {
 func (d *dir) Close() error               { return nil }
 func (d *dir) Stat() (fs.FileInfo, error) { return d, nil }
 func (d *dir) Name() string               { return d.name }
-func (d *dir) Size() int64               { return 0 }
-func (d *dir) Mode() fs.FileMode         { return d.mode }
-func (d *dir) ModTime() time.Time        { return d.modTime }
-func (d *dir) IsDir() bool               { return true }
-func (d *dir) Sys() interface{}          { return nil }
+func (d *dir) Size() int64                { return 0 }
+func (d *dir) Mode() fs.FileMode          { return d.mode }
+func (d *dir) ModTime() time.Time         { return d.modTime }
+func (d *dir) IsDir() bool                { return true }
+func (d *dir) Sys() interface{}           { return nil }
 
 // dirEntry implements fs.DirEntry
 type dirEntry struct {
 	info fs.FileInfo
 }
 
-func (de dirEntry) Name() string     { return de.info.Name() }
-func (de dirEntry) IsDir() bool      { return de.info.IsDir() }
-func (de dirEntry) Type() fs.FileMode { return de.info.Mode().Type() }
+func (de dirEntry) Name() string               { return de.info.Name() }
+func (de dirEntry) IsDir() bool                { return de.info.IsDir() }
+func (de dirEntry) Type() fs.FileMode          { return de.info.Mode().Type() }
 func (de dirEntry) Info() (fs.FileInfo, error) { return de.info, nil }

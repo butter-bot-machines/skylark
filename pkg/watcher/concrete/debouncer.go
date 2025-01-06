@@ -10,12 +10,12 @@ import (
 
 // debouncerImpl implements watcher.Debouncer
 type debouncerImpl struct {
-	delay     time.Duration
-	maxDelay  time.Duration
-	timers    map[string]*timerCtx
-	mu        sync.Mutex
-	done      chan struct{}
-	clock     timing.Clock
+	delay    time.Duration
+	maxDelay time.Duration
+	timers   map[string]*timerCtx
+	mu       sync.Mutex
+	done     chan struct{}
+	clock    timing.Clock
 }
 
 type timerCtx struct {

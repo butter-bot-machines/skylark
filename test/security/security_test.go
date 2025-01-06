@@ -555,7 +555,7 @@ func (j *cpuHogJob) Process() error {
 					x = (x << 13) | (x >> 51)
 					x ^= x * 0x123456789abcdef
 					x = x*0xc6a4a7935bd1e995 + 1
-					
+
 					if x == 0 {
 						runtime.Gosched()
 					}
@@ -573,7 +573,7 @@ func (j *cpuHogJob) Process() error {
 		case <-ticker.C:
 			elapsed := time.Since(start)
 			if err := j.proc.enforceCPULimit(elapsed); err != nil {
-				cancel() // Signal all goroutines to stop
+				cancel()  // Signal all goroutines to stop
 				wg.Wait() // Wait for all goroutines to finish
 				j.onComplete(true)
 				return err

@@ -124,11 +124,11 @@ func (m *Manager) Reset() error {
 func (m *Manager) Get(key string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	// Split key into parts for nested access
 	parts := strings.Split(key, ".")
 	current := m.config.AsMap()
-	
+
 	for i, part := range parts[:len(parts)-1] {
 		next, ok := current[part].(map[string]interface{})
 		if !ok {
@@ -136,7 +136,7 @@ func (m *Manager) Get(key string) (interface{}, error) {
 		}
 		current = next
 	}
-	
+
 	value, ok := current[parts[len(parts)-1]]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, key)
@@ -148,11 +148,11 @@ func (m *Manager) Get(key string) (interface{}, error) {
 func (m *Manager) Set(key string, value interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Split key into parts for nested access
 	parts := strings.Split(key, ".")
 	current := m.config.AsMap()
-	
+
 	// Navigate to parent of target key
 	for _, part := range parts[:len(parts)-1] {
 		next, ok := current[part].(map[string]interface{})
@@ -162,15 +162,15 @@ func (m *Manager) Set(key string, value interface{}) error {
 		}
 		current = next
 	}
-	
+
 	// Set value
 	current[parts[len(parts)-1]] = value
-	
+
 	// Update config from map
 	if err := m.config.FromMap(current); err != nil {
 		return fmt.Errorf("failed to update config: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -178,11 +178,11 @@ func (m *Manager) Set(key string, value interface{}) error {
 func (m *Manager) Delete(key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Split key into parts for nested access
 	parts := strings.Split(key, ".")
 	current := m.config.AsMap()
-	
+
 	// Navigate to parent of target key
 	for i, part := range parts[:len(parts)-1] {
 		next, ok := current[part].(map[string]interface{})
@@ -191,15 +191,15 @@ func (m *Manager) Delete(key string) error {
 		}
 		current = next
 	}
-	
+
 	// Delete key
 	delete(current, parts[len(parts)-1])
-	
+
 	// Update config from map
 	if err := m.config.FromMap(current); err != nil {
 		return fmt.Errorf("failed to update config: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -214,7 +214,7 @@ func (m *Manager) GetAll() (map[string]interface{}, error) {
 func (m *Manager) SetAll(values map[string]interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if err := m.config.FromMap(values); err != nil {
 		return fmt.Errorf("failed to update config: %w", err)
 	}

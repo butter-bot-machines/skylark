@@ -23,12 +23,12 @@ type ResourceLimits struct {
 // DefaultLimits returns default resource limits
 func DefaultLimits() ResourceLimits {
 	return ResourceLimits{
-		MaxMemory:    256 * 1024 * 1024,    // 256MB - more restrictive for testing
+		MaxMemory:    256 * 1024 * 1024,     // 256MB - more restrictive for testing
 		MaxCPUTime:   50 * time.Millisecond, // 50ms - even more restrictive for testing
 		MaxFileSize:  10 * 1024 * 1024,      // 10MB
 		MaxFiles:     100,                   // 100 files
 		MaxProcesses: 10,                    // 10 processes
-		clock:       timing.New(),           // Use real clock by default
+		clock:        timing.New(),          // Use real clock by default
 	}
 }
 
@@ -42,10 +42,10 @@ func (l ResourceLimits) WithClock(clock timing.Clock) ResourceLimits {
 func enforceMemoryLimit(limit int64) {
 	// Set soft memory limit
 	debug.SetMemoryLimit(limit)
-	
+
 	// Set GOGC to trigger GC more frequently
 	debug.SetGCPercent(10)
-	
+
 	// Force immediate GC
 	runtime.GC()
 	debug.FreeOSMemory()

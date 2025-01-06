@@ -16,10 +16,10 @@ import (
 
 // auditLogger implements security.AuditLogger
 type auditLogger struct {
-	mu       sync.Mutex
-	config   types.AuditLogConfig
-	file     *os.File
-	buffer   []*types.Event
+	mu        sync.Mutex
+	config    types.AuditLogConfig
+	file      *os.File
+	buffer    []*types.Event
 	lastFlush time.Time
 }
 
