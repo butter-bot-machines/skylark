@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -130,7 +131,7 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 		// Execute tool
 		result, err := a.executeTool(toolName, toolInput)
 		if err != nil {
-			return "", fmt.Errorf("tool execution failed: %w", err)
+			return "", err // Don't wrap error to allow proper error propagation
 		}
 
 		// Include tool result in context
@@ -163,6 +164,9 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("provider error: %w", err)
 	}
+	if resp.Error != nil {
+		return "", fmt.Errorf("provider error: %v", resp.Error)
+	}
 
 	// Handle tool calls if present
 	if len(resp.ToolCalls) > 0 {
@@ -170,7 +174,7 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 		for _, call := range resp.ToolCalls {
 			result, err := a.executeTool(call.Function.Name, call.Function.Arguments)
 			if err != nil {
-				return "", fmt.Errorf("tool execution failed: %w", err)
+				return "", err // Don't wrap error to allow proper error propagation
 			}
 
 			// Include tool result in context
@@ -183,6 +187,9 @@ func (a *Assistant) Process(cmd *parser.Command) (string, error) {
 		resp, err = p.Send(ctx, prompt, opts)
 		if err != nil {
 			return "", fmt.Errorf("provider error after tools: %w", err)
+		}
+		if resp.Error != nil {
+			return "", fmt.Errorf("provider error after tools: %v", resp.Error)
 		}
 	}
 
@@ -197,6 +204,7 @@ func (a *Assistant) parseToolUsage(text string) (string, string) {
 		if len(parts) == 2 {
 			return parts[0], parts[1]
 		}
+		return parts[0], "" // Allow tool usage without arguments
 	}
 	return "", ""
 }
@@ -209,12 +217,17 @@ func (a *Assistant) executeTool(name string, input string) (string, error) {
 		return "", fmt.Errorf("failed to load tool: %w", err)
 	}
 
-	// Prepare input
-	inputJSON, err := json.Marshal(map[string]string{
-		"content": input,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal input: %w", err)
+	// Prepare input JSON
+	var inputJSON []byte
+	if input == "" {
+		// Empty input becomes empty object
+		inputJSON = []byte("{}")
+	} else {
+		// Input must be valid JSON
+		if !json.Valid([]byte(input)) {
+			return "", fmt.Errorf("invalid JSON input: %s", input)
+		}
+		inputJSON = []byte(input)
 	}
 
 	// Validate input
@@ -225,10 +238,17 @@ func (a *Assistant) executeTool(name string, input string) (string, error) {
 	// Execute in sandbox
 	output, err := tool.Execute(inputJSON, nil, a.sandbox)
 	if err != nil {
-		return "", fmt.Errorf("tool execution failed: %w", err)
+		return "", err // Don't wrap error to allow proper error propagation
 	}
 
-	return string(output), nil
+	// Validate output is JSON
+	var prettyOutput bytes.Buffer
+	if err := json.Indent(&prettyOutput, output, "", "  "); err != nil {
+		// Not JSON, return as-is
+		return string(output), nil
+	}
+
+	return prettyOutput.String(), nil
 }
 
 // buildPrompt creates the full prompt with context

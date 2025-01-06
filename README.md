@@ -7,7 +7,7 @@ Skylark is a Go-based system that transforms Markdown documents through AI-power
 - **File Watching**: Automatically detects changes in Markdown files
 - **Inline Commands**: Process commands starting with `!` directly in your Markdown files
 - **Assistants**: Configurable AI assistants with specialized knowledge and capabilities
-- **Tool System**: Extensible tool system for custom functionality
+- **Tool System**: Extensible tool system with built-in and custom tools
 - **Security**: Robust security features including:
   - API key management
   - File access controls
@@ -42,7 +42,7 @@ skai init my-project
 !What's today's date?
 
 # Research
-!researcher Summarize recent developments in AI
+!researcher Tell me about the current time in different timezones
 ```
 
 3. Run Skylark:
@@ -65,9 +65,9 @@ my_project/
  │   │       ├─ prompt.md
  │   │       └─ knowledge/
  │   ├─ tools/
- │   │   ├─ summarize/
+ │   │   ├─ currentdatetime/  # Built-in tool
  │   │   │   ├─ main.go
- │   │   └─ url_lookup/
+ │   │   └─ url_lookup/       # Custom tool
  │   │       ├─ main.go
  │   └─ config.yml
  └─ ...
@@ -113,7 +113,7 @@ Each tool must implement two commands:
 
 ### Example Tool Structure
 
-Here's a simple summarization tool (`summarize/main.go`):
+Here's a simple date/time tool (built-in `currentdatetime/main.go`):
 
 ```go
 package main
@@ -123,6 +123,7 @@ import (
     "flag"
     "fmt"
     "os"
+    "time"
 )
 
 // Command line flags
@@ -134,31 +135,19 @@ var (
 // Tool schema definition
 var schema = map[string]interface{}{
     "schema": map[string]interface{}{
-        "name": "summarize",
-        "description": "Summarizes text content",
+        "name": "currentdatetime",
+        "description": "Returns current date and time",
         "parameters": map[string]interface{}{
             "type": "object",
             "properties": map[string]interface{}{
-                "content": map[string]interface{}{
+                "format": map[string]interface{}{
                     "type": "string",
-                    "description": "Text to summarize",
+                    "description": "Optional time format string (defaults to RFC3339)",
                 },
             },
-            "required": []string{"content"},
         },
     },
-    "env": map[string]interface{}{
-        "API_KEY": map[string]interface{}{
-            "type": "string",
-            "description": "API key for summarization service",
-            "default": "",  // Optional default value
-        },
-        "MAX_LENGTH": map[string]interface{}{
-            "type": "integer",
-            "description": "Maximum summary length",
-            "default": 100,
-        },
-    },
+    "env": map[string]interface{}{}, // No environment variables needed
 }
 
 func main() {
@@ -172,14 +161,6 @@ func main() {
 
     // Handle --health flag: check dependencies
     if *checkHealth {
-        // Verify API key is set
-        if os.Getenv("API_KEY") == "" {
-            json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-                "status": false,
-                "details": "API_KEY not configured",
-            })
-            return
-        }
         json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
             "status": true,
             "details": "Ready to process",
@@ -189,23 +170,25 @@ func main() {
 
     // Normal operation: process input
     var input struct {
-        Content string `json:"content"`
+        Format string `json:"format,omitempty"`
     }
     if err := json.NewDecoder(os.Stdin).Decode(&input); err != nil {
         fmt.Fprintf(os.Stderr, "Invalid input: %v\n", err)
         os.Exit(1)
     }
 
-    // Process content and return result
+    // Get current time
+    now := time.Now()
+    format := time.RFC3339
+    if input.Format != "" {
+        format = input.Format
+    }
+
+    // Return formatted time
     output := map[string]string{
-        "summary": summarizeText(input.Content),
+        "datetime": now.Format(format),
     }
     json.NewEncoder(os.Stdout).Encode(output)
-}
-
-func summarizeText(content string) string {
-    // Actual summarization logic would go here
-    return "Summary: " + content
 }
 ```
 
@@ -215,13 +198,10 @@ Tools are configured in `config.yml` under the `tools` section:
 
 ```yaml
 tools:
-  # Tool-specific settings
-  summarize:
-    env:
-      API_KEY: "sk-xxxxx"    # Required API key
-      MAX_LENGTH: 150        # Override default value
-      TIMEOUT: "30s"         # Additional settings
+  # Built-in tool (no config needed)
+  currentdatetime: {}
 
+  # Custom tool with config
   web_search:
     env:
       API_KEY: "key-yyyyy"
@@ -235,10 +215,12 @@ tools:
 
 ### Tool Integration
 
-1. Create a new directory: `.skai/tools/<tool-name>/`
-2. Implement `main.go` with required commands
-3. Skylark automatically:
-   - Compiles the tool when source changes
+1. For custom tools:
+   - Create a new directory: `.skai/tools/<tool-name>/`
+   - Implement `main.go` with required commands
+2. Skylark automatically:
+   - Extracts and compiles built-in tools
+   - Compiles custom tools when source changes
    - Validates schema and environment
    - Manages tool lifecycle and execution
    - Handles errors and retries
@@ -246,7 +228,7 @@ tools:
 Tools can be referenced in assistant configurations and used in Markdown commands:
 
 ```markdown
-!summarize Analyze this text and provide key points.
+!What time is it?
 ```
 
 ## Security

@@ -120,10 +120,14 @@ func main() {
 func TestToolManager(t *testing.T) {
 	toolName := "test-tool"
 	basePath := setupTestTool(t, toolName)
-	manager := NewManager(basePath)
+	manager, err := NewManager(basePath)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
 
 	// Test compilation
-	err := manager.Compile(toolName)
+	err = manager.Compile(toolName)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
@@ -198,9 +202,13 @@ func TestToolManager(t *testing.T) {
 func TestToolValidation(t *testing.T) {
 	toolName := "test-tool"
 	basePath := setupTestTool(t, toolName)
-	manager := NewManager(basePath)
+	manager, err := NewManager(basePath)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
 
-	err := manager.Compile(toolName)
+	err = manager.Compile(toolName)
 	if err != nil {
 		t.Fatalf("Compile() error = %v", err)
 	}
@@ -260,7 +268,11 @@ func TestToolValidation(t *testing.T) {
 func TestToolCaching(t *testing.T) {
 	toolName := "test-tool"
 	basePath := setupTestTool(t, toolName)
-	manager := NewManager(basePath)
+	manager, err := NewManager(basePath)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
 
 	// First load
 	tool1, err := manager.LoadTool(toolName)
@@ -287,5 +299,72 @@ func TestToolCaching(t *testing.T) {
 
 	if !tool1.LastBuilt.After(time.Time{}) {
 		t.Error("LastBuilt not updated after compilation")
+	}
+}
+
+func TestBuiltinTools(t *testing.T) {
+	// Create test directory
+	basePath := t.TempDir()
+	
+	// Create manager
+	manager, err := NewManager(basePath)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer manager.Close()
+
+	// Initialize builtin tools - this will extract and compile the tool
+	err = manager.InitBuiltinTools()
+	if err != nil {
+		t.Fatalf("InitBuiltinTools() error = %v", err)
+	}
+
+	// Verify the tool was compiled successfully by checking if binary exists
+	binaryPath := filepath.Join(basePath, "currentdatetime", "currentdatetime")
+	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
+		t.Fatalf("Tool binary not created at %s", binaryPath)
+	}
+
+	// Test loading currentdatetime tool
+    tool, err := manager.LoadTool("currentdatetime")
+	if err != nil {
+		t.Fatalf("LoadTool() error = %v", err)
+	}
+
+	// Test schema
+    if tool.Schema.Schema.Name != "currentdatetime" {
+        t.Errorf("Tool name = %v, want currentdatetime", tool.Schema.Schema.Name)
+	}
+
+	// Test execution
+	input := map[string]string{
+		"format": "2006-01-02",
+	}
+	inputJSON, _ := json.Marshal(input)
+
+	// Create sandbox for test
+	sb, err := sandbox.NewSandbox(basePath, &sandbox.DefaultLimits, &sandbox.NetworkPolicy{
+		AllowOutbound: false,
+		AllowInbound:  false,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create sandbox: %v", err)
+	}
+
+	output, err := tool.Execute(inputJSON, nil, sb)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var result map[string]string
+	err = json.Unmarshal(output, &result)
+	if err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Verify date format
+	_, err = time.Parse("2006-01-02", result["datetime"])
+	if err != nil {
+		t.Errorf("Invalid date format: %v", err)
 	}
 }

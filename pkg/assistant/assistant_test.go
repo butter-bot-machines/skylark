@@ -102,8 +102,15 @@ Test prompt content
 				return mockProvider, nil
 			})
 
+			// Create tool manager
+			toolManager, err := tool.NewManager(tempDir)
+			if err != nil {
+				t.Fatalf("NewManager() error = %v", err)
+			}
+			defer toolManager.Close()
+
 			// Create manager
-			manager, err := NewManager(tempDir, tool.NewManager(tempDir), reg, &sandbox.NetworkPolicy{}, "openai")
+			manager, err := NewManager(tempDir, toolManager, reg, &sandbox.NetworkPolicy{}, "openai")
 			if err != nil {
 				t.Fatalf("NewManager() error = %v", err)
 			}
@@ -145,7 +152,7 @@ name: test-assistant
 description: A test assistant
 model: gpt-4
 tools:
-  - summarize
+  - currentdatetime
 ---
 Test prompt content
 `
@@ -155,7 +162,7 @@ Test prompt content
 	}
 
 	// Create test tool
-	toolDir := filepath.Join(toolsDir, "summarize")
+	toolDir := filepath.Join(toolsDir, "currentdatetime")
 	err = os.MkdirAll(toolDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create tool directory: %v", err)
@@ -173,7 +180,7 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--usage" {
-		fmt.Print(` + "`" + `{"schema":{"name":"summarize","description":"Summarizes text","parameters":{"type":"object","properties":{"content":{"type":"string","description":"Text to summarize"}},"required":["content"]}},"env":{}}` + "`" + `)
+		fmt.Print(` + "`" + `{"schema":{"name":"currentdatetime","description":"Returns current date and time","parameters":{"type":"object","properties":{"format":{"type":"string","description":"Optional time format string"}}}},"env":{}}` + "`" + `)
 		return
 	}
 
@@ -187,12 +194,12 @@ func main() {
 	
 	// Parse input
 	var data struct {
-		Content string ` + "`json:\"content\"`" + `
+		Format string ` + "`json:\"format\"`" + `
 	}
 	json.Unmarshal(input, &data)
 
 	// Return mock result
-	fmt.Printf(` + "`" + `{"result":"Summary of: %s"}` + "`" + `, data.Content)
+	fmt.Printf(` + "`" + `{"datetime":"2024-01-05T10:00:00Z"}` + "`" + `)
 }`
 
 	err = os.WriteFile(filepath.Join(toolDir, "main.go"), []byte(mainGo), 0644)
@@ -212,7 +219,11 @@ func main() {
 	})
 
 	// Create tool manager
-	toolMgr := tool.NewManager(toolsDir)
+	toolMgr, err := tool.NewManager(toolsDir)
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	defer toolMgr.Close()
 
 	// Create network policy for sandbox
 	networkPolicy := &sandbox.NetworkPolicy{
@@ -236,8 +247,8 @@ func main() {
 		t.Errorf("Assistant name = %v, want test-assistant", assistant.Name)
 	}
 
-	if len(assistant.Tools) != 1 || assistant.Tools[0] != "summarize" {
-		t.Errorf("Assistant tools = %v, want [summarize]", assistant.Tools)
+	if len(assistant.Tools) != 1 || assistant.Tools[0] != "currentdatetime" {
+		t.Errorf("Assistant tools = %v, want [currentdatetime]", assistant.Tools)
 	}
 
 	// Test processing command
@@ -258,18 +269,18 @@ func main() {
 	// Test tool usage
 	cmd = &parser.Command{
 		Assistant: "test-assistant",
-		Text:      "use summarize Test input",
+		Text:      "use currentdatetime",
 	}
 
 	// Mock provider response for tool usage
-	mockProvider.response = "Summary: Test input summarized"
+	mockProvider.response = "The current time is 2024-01-05T10:00:00Z"
 
 	response, err = assistant.Process(cmd)
 	if err != nil {
 		t.Fatalf("Process() with tool error = %v", err)
 	}
 
-	if response != "Summary: Test input summarized" {
-		t.Errorf("Process() with tool response = %v, want 'Summary: Test input summarized'", response)
+	if response != "The current time is 2024-01-05T10:00:00Z" {
+		t.Errorf("Process() with tool response = %v, want 'The current time is 2024-01-05T10:00:00Z'", response)
 	}
 }

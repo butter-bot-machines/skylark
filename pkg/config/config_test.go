@@ -27,10 +27,7 @@ models:
       temperature: 0.5
       max_tokens: 1000
 tools:
-  summarize:
-    env:
-      API_KEY: sum-test-key
-      MAX_LENGTH: "100"
+  currentdatetime:
   web_search:
     env:
       API_KEY: search-test-key
@@ -38,15 +35,13 @@ tools:
 workers:
   count: 4
   queue_size: 100
-watch_paths:
-  - /path/to/watch1
-  - /path/to/watch2
+
 file_watch:
   debounce_delay: 100ms
   max_delay: 1s
-  extensions:
-    - .md
-    - .txt
+  globs:
+    - /path/to/watch1/**/*.{md,txt}
+    - /path/to/watch2/**/*.{md,txt}
 `)
 
 	err := os.WriteFile(configPath, configData, 0644)
@@ -86,15 +81,13 @@ file_watch:
 	}
 
 	// Test tool config
-	tool, ok := manager.GetToolConfig("summarize")
+	tool, ok := manager.GetToolConfig("currentdatetime")
 	if !ok {
 		t.Fatal("Failed to get tool config")
 	}
-	if tool.Env["API_KEY"] != "sum-test-key" {
-		t.Errorf("Expected API key 'sum-test-key', got '%s'", tool.Env["API_KEY"])
-	}
-	if tool.Env["MAX_LENGTH"] != "100" {
-		t.Errorf("Expected MAX_LENGTH '100', got '%s'", tool.Env["MAX_LENGTH"])
+	// currentdatetime tool has no env vars
+	if len(tool.Env) != 0 {
+		t.Errorf("Expected no env vars for currentdatetime tool, got %d", len(tool.Env))
 	}
 
 	// Test worker config
@@ -128,11 +121,7 @@ func TestConfigSaving(t *testing.T) {
 			},
 		},
 		Tools: map[string]ToolConfig{
-			"summarize": {
-				Env: map[string]string{
-					"API_KEY": "test-key",
-				},
-			},
+			"currentdatetime": {}, // No env vars needed
 		},
 	}
 
@@ -167,12 +156,12 @@ func TestConfigSaving(t *testing.T) {
 	}
 
 	// Check tool config
-	tool, ok := loadedConfig.Tools["summarize"]
+	tool, ok := loadedConfig.Tools["currentdatetime"]
 	if !ok {
 		t.Fatal("Failed to get tool config")
 	}
-	if tool.Env["API_KEY"] != "test-key" {
-		t.Errorf("Expected API key 'test-key', got '%s'", tool.Env["API_KEY"])
+	if len(tool.Env) != 0 {
+		t.Errorf("Expected no env vars for currentdatetime tool, got %d", len(tool.Env))
 	}
 }
 

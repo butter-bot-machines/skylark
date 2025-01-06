@@ -41,13 +41,13 @@ var testFixtures = struct {
 		},
 	},
 	toolCallResponse: provider.Response{
-		Content: "Let me help summarize that",
+		Content: "Let me check the current time",
 		ToolCalls: []provider.ToolCall{
 			{
 				ID: "call_1",
 				Function: provider.Function{
-					Name:      "summarize",
-					Arguments: `{"text":"test"}`,
+					Name:      "currentdatetime",
+					Arguments: `{}`,
 				},
 			},
 		},

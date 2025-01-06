@@ -19,7 +19,7 @@
 ### 1. Direct Tool Usage
 Test that assistants can handle direct tool commands from users:
 ```markdown
-!default use summarize on this text
+!default What time is it?
 ```
 - Verify tool execution
 - Verify result formatting
@@ -29,13 +29,13 @@ Test that assistants can handle direct tool commands from users:
 Test that assistants can handle tool calls from providers:
 ```json
 {
-  "content": "Let me help with that",
+  "content": "Let me check the time",
   "tool_calls": [
     {
       "id": "call_1",
       "function": {
-        "name": "summarize",
-        "arguments": "{\"text\":\"test\"}"
+        "name": "currentdatetime",
+        "arguments": "{\"format\":\"2006-01-02\"}"
       }
     }
   ]

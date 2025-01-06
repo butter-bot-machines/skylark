@@ -1,14 +1,9 @@
 # Test Commands
 
+This is a test document to verify command processing is working correctly.
+
 !help What can you do?
 
-> Processed command: What can you do?
+!What time is it?
 
-!summarize # Introduction
-
-> Processed command: # Introduction
-
-This is a test document to verify command processing is working correctly.
-!default Tell me about this document.
-
-> Processed command: Tell me about this document.
+!default Tell me about # Test Commands

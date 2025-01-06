@@ -7,9 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/butter-bot-machines/skylark/internal/builtins"
 	"github.com/butter-bot-machines/skylark/pkg/sandbox"
+	"github.com/fsnotify/fsnotify"
 )
 
 // Tool represents a compiled tool binary and its metadata
@@ -43,14 +46,91 @@ type EnvVar struct {
 type Manager struct {
 	tools    map[string]*Tool
 	basePath string
+	watcher  *fsnotify.Watcher
+	mu       sync.RWMutex
 }
 
 // NewManager creates a new tool manager
-func NewManager(basePath string) *Manager {
-	return &Manager{
+func NewManager(basePath string) (*Manager, error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create watcher: %w", err)
+	}
+
+	m := &Manager{
 		tools:    make(map[string]*Tool),
 		basePath: basePath,
+		watcher:  watcher,
 	}
+
+	// Start watching for tool changes
+	go m.watchTools()
+
+	return m, nil
+}
+
+// InitBuiltinTools extracts and initializes builtin tools
+func (m *Manager) InitBuiltinTools() error {
+	// Extract currentDateTime source to .skai/tools
+	data, err := builtins.GetToolSource("currentdatetime")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded source: %w", err)
+	}
+
+	// Extract to .skai/tools like any other tool
+    toolDir := filepath.Join(m.basePath, "currentdatetime")
+	if err := os.MkdirAll(toolDir, 0755); err != nil {
+		return fmt.Errorf("failed to create tool directory: %w", err)
+	}
+
+	mainFile := filepath.Join(toolDir, "main.go")
+	if err := os.WriteFile(mainFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write source: %w", err)
+	}
+
+	// Let the standard tool manager handle the rest
+	// Initial compilation
+    if err := m.Compile("currentdatetime"); err != nil {
+		return fmt.Errorf("failed to compile tool: %w", err)
+	}
+
+	if err := m.watcher.Add(toolDir); err != nil {
+		return fmt.Errorf("failed to watch tool directory: %w", err)
+	}
+
+	return nil
+}
+
+// watchTools monitors tool source files for changes
+func (m *Manager) watchTools() {
+	for {
+		select {
+		case event, ok := <-m.watcher.Events:
+			if !ok {
+				return
+			}
+			// Only handle .go file changes
+			if filepath.Ext(event.Name) != ".go" {
+				continue
+			}
+			// Get tool name from path
+			toolName := filepath.Base(filepath.Dir(event.Name))
+			// Recompile tool
+			if err := m.Compile(toolName); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to compile tool %s: %v\n", toolName, err)
+			}
+		case err, ok := <-m.watcher.Errors:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Watcher error: %v\n", err)
+		}
+	}
+}
+
+// Close stops the tool manager and cleans up resources
+func (m *Manager) Close() error {
+	return m.watcher.Close()
 }
 
 // LoadTool loads a tool from the specified directory
@@ -90,7 +170,9 @@ func (m *Manager) LoadTool(name string) (*Tool, error) {
 	}
 
 	// Store in cache
+	m.mu.Lock()
 	m.tools[name] = tool
+	m.mu.Unlock()
 	return tool, nil
 }
 
@@ -108,9 +190,11 @@ func (m *Manager) Compile(name string) error {
 	}
 
 	// Update tool metadata if loaded
+	m.mu.Lock()
 	if tool, exists := m.tools[name]; exists {
 		tool.LastBuilt = time.Now()
 	}
+	m.mu.Unlock()
 
 	return nil
 }

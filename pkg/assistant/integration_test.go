@@ -1,7 +1,6 @@
 package assistant
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -35,37 +34,37 @@ func TestAssistantProviderIntegration(t *testing.T) {
 	}{
 		{
 			name:    "direct tool usage",
-			command: "use summarize test input",
+			command: "use test-mock",
 			responses: []provider.Response{
-				{Content: "Here's the summary: test result"},
+				{Content: "The result is success"},
 			},
-			toolResult:   "test result",
+			toolResult:   `{"result":"success"}`,
 			wantExecuted: true,
 			wantRequests: 1,
-			wantResponse: "Here's the summary: test result",
+			wantResponse: "The result is success",
 		},
 		{
 			name:    "provider tool call",
-			command: "summarize this",
+			command: "run test",
 			responses: []provider.Response{
 				{
-					Content: "Let me help summarize that",
+					Content: "Let me run that",
 					ToolCalls: []provider.ToolCall{
 						{
 							ID: "call_1",
 							Function: provider.Function{
-								Name:      "summarize",
-								Arguments: `{"text":"test"}`,
+								Name:      "test-mock",
+								Arguments: `{}`,
 							},
 						},
 					},
 				},
-				{Content: "Here's the summary: test result"},
+				{Content: "The result is success"},
 			},
-			toolResult:   "test result",
+			toolResult:   `{"result":"success"}`,
 			wantExecuted: true,
 			wantRequests: 2,
-			wantResponse: "Here's the summary: test result",
+			wantResponse: "The result is success",
 		},
 		{
 			name:    "provider error",
@@ -82,12 +81,12 @@ func TestAssistantProviderIntegration(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name:       "tool execution error",
-			command:    "use summarize test input",
-			toolResult: "test result",
+			name:    "tool execution error",
+			command: "use test-mock error",
 			responses: []provider.Response{
-				{Content: "Here's the summary"},
+				{Content: "Failed to execute"},
 			},
+			toolResult:   `{"error":"test error"}`,
 			wantExecuted: true,
 			wantError:    true,
 		},
@@ -101,40 +100,40 @@ func TestAssistantProviderIntegration(t *testing.T) {
 						{
 							ID: "call_1",
 							Function: provider.Function{
-								Name:      "summarize",
-								Arguments: `{"text":"first"}`,
+								Name:      "test-mock",
+								Arguments: `{"mode":"first"}`,
 							},
 						},
 						{
 							ID: "call_2",
 							Function: provider.Function{
-								Name:      "summarize",
-								Arguments: `{"text":"second"}`,
+								Name:      "test-mock",
+								Arguments: `{"mode":"second"}`,
 							},
 						},
 					},
 				},
-				{Content: "Here's the analysis with both summaries"},
+				{Content: "Here's the analysis with both results"},
 			},
-			toolResult:   "test result",
+			toolResult:   `{"result":"test"}`,
 			wantExecuted: true,
 			wantRequests: 2,
-			wantResponse: "Here's the analysis with both summaries",
+			wantResponse: "Here's the analysis with both results",
 		},
 		{
 			name:    "tool result in context",
-			command: "use summarize test input",
+			command: "use test-mock",
 			responses: []provider.Response{
-				{Content: "Here's the summary with context: test result"},
+				{Content: "The result is success"},
 			},
-			toolResult:   "test result",
+			toolResult:   `{"result":"success"}`,
 			wantExecuted: true,
 			wantRequests: 1,
-			wantResponse: "Here's the summary with context: test result",
+			wantResponse: "The result is success",
 		},
 		{
 			name:    "context size limit",
-			command: "use summarize " + strings.Repeat("x", 8000), // Exceed context limit
+			command: "use test-mock " + strings.Repeat("x", 8000), // Exceed context limit
 			responses: []provider.Response{
 				{Content: "Content too large"},
 			},
@@ -142,12 +141,12 @@ func TestAssistantProviderIntegration(t *testing.T) {
 		},
 		{
 			name:    "tool timeout",
-			command: "use summarize test input",
+			command: "use test-mock timeout",
 			responses: []provider.Response{
 				{Content: "Tool timed out"},
 			},
-			toolResult: "sleep", // Special value to trigger sleep in mock tool
-			wantError:  true,
+			toolResult:   `{"mode":"timeout"}`,
+			wantError:    true,
 		},
 	}
 
@@ -161,15 +160,17 @@ func TestAssistantProviderIntegration(t *testing.T) {
 			}
 
 			// Create mock tool binary
-			toolDir := filepath.Join(toolsDir, "summarize")
+			toolDir := filepath.Join(toolsDir, "test-mock")
 			if err := os.MkdirAll(toolDir, 0755); err != nil {
 				t.Fatal(err)
 			}
 
 			// Create mock tool source
-			mainGo := fmt.Sprintf(`package main
+			mainGo := `package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -177,41 +178,66 @@ import (
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "--usage" {
-		fmt.Print(`+"`"+`{"schema":{"name":"summarize","description":"Test tool","parameters":{"type":"object","properties":{"content":{"type":"string"}}}}}`+"`"+`)
+	usage := flag.Bool("usage", false, "Display usage schema")
+	health := flag.Bool("health", false, "Check tool health")
+	flag.Parse()
+
+	if *usage {
+		fmt.Print(` + "`" + `{"schema":{"name":"test-mock","description":"Test tool","parameters":{"type":"object","properties":{"mode":{"type":"string","description":"Test mode"}}}},"env":{}}` + "`" + `)
 		return
 	}
 
-	if len(os.Args) > 1 && os.Args[1] == "--health" {
-		fmt.Print(`+"`"+`{"status":true,"details":"healthy"}`+"`"+`)
+	if *health {
+		fmt.Print(` + "`" + `{"status":true,"details":"healthy"}` + "`" + `)
 		return
 	}
 
-	// Read and discard input
-	io.ReadAll(os.Stdin)
+	// Read input
+	input, _ := io.ReadAll(os.Stdin)
+	
+	// Parse input
+	var params struct {
+		Mode string ` + "`json:\"mode\"`" + `
+	}
+	if len(input) > 0 {
+		if err := json.Unmarshal(input, &params); err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid input: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
-	if %q == "tool execution error" {
+	// Handle test modes
+	switch params.Mode {
+	case "error":
+		fmt.Fprintf(os.Stderr, "Test error\n")
 		os.Exit(1)
-	}
-
-	if %q == "sleep" {
-		// Sleep longer than sandbox timeout (100ms)
+	case "timeout":
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	fmt.Print(%q)
-}`, tt.name, tt.toolResult, tt.toolResult)
+	// Return mock result
+	result := os.Getenv("MOCK_RESULT")
+	if result == "" {
+		result = ` + "`" + `{"result":"success"}` + "`" + `
+	}
+	fmt.Print(result)
+}`
 
+			// Write tool source
 			if err := os.WriteFile(filepath.Join(toolDir, "main.go"), []byte(mainGo), 0644); err != nil {
 				t.Fatal(err)
 			}
 
 			// Create test components
 			testProv := &testProvider{responses: tt.responses}
-			toolMgr := tool.NewManager(toolsDir)
+			toolMgr, err := tool.NewManager(toolsDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer toolMgr.Close()
 
 			// Compile tool
-			if err := toolMgr.Compile("summarize"); err != nil {
+			if err := toolMgr.Compile("test-mock"); err != nil {
 				t.Fatal(err)
 			}
 
@@ -231,6 +257,12 @@ func main() {
 				t.Fatal(err)
 			}
 
+			// Set environment variables
+			sb.EnvWhitelist = []string{"MOCK_RESULT"}
+			if err := os.Setenv("MOCK_RESULT", tt.toolResult); err != nil {
+				t.Fatal(err)
+			}
+
 			// Create provider registry
 			reg := registry.New()
 			reg.Register("test", func(model string) (provider.Provider, error) {
@@ -240,7 +272,7 @@ func main() {
 			// Create assistant
 			assistant := &Assistant{
 				Name:            "test",
-				Tools:           []string{"summarize"},
+				Tools:           []string{"test-mock"},
 				Model:           "test:model",
 				toolMgr:         toolMgr,
 				providers:       reg,
@@ -279,7 +311,14 @@ func main() {
 			// Verify context in provider requests
 			if tt.name == "tool result in context" && len(testProv.requests) > 0 {
 				request := testProv.requests[0]
-				if !strings.Contains(request, "Tool result: test result") {
+				normalized := strings.Map(func(r rune) rune {
+					if r == ' ' || r == '\n' {
+						return -1
+					}
+					return r
+				}, request)
+				if !strings.Contains(normalized, `Toolresult:{"result":"success"}`) {
+					t.Logf("Got request: %s", request)
 					t.Error("Tool result not found in provider context")
 				}
 			}

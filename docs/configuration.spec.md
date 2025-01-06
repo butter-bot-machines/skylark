@@ -42,20 +42,22 @@ model:
 tools:
   - name: web_search
     description: Performs targeted web searches for academic materials.
-  - name: summarize
-    description: Condenses technical reports into short, digestible summaries.
+  - name: currentdatetime
+    description: Returns current date and time in various formats.
 
 You are an expert research assistant specializing in synthesizing complex information into clear, concise explanations. Always respond formally and include sources when applicable. Format your responses with Markdown headings and bullet points for clarity.
 ```
 ## Tools
 1. Definition:
-    * Tools are small programs written in Go, stored in .skai/tools/<tool_name>/, and compiled by Skai automatically.
-    * They must adhere to a strict interface and implement two commands:
+    * Tools come in two forms:
+        * Builtin tools: Embedded within the Skylark binary
+        * Custom tools: User-created tools in .skai/tools/<tool_name>/
+    * All tools must adhere to a strict interface and implement two commands:
         * --usage: Outputs tool schema and runtime requirements.
         * --health: Verifies operational readiness.
 2. Tool Schema Specification (--usage Output):
     * Tools output a JSON descriptor with two fields:
-        1. schema: OpenAI-compatible function definition including the tool’s name, description, and input parameters.
+        1. schema: OpenAI-compatible function definition including the tool's name, description, and input parameters.
         2. env: Key-value pairs defining required runtime environment variables, each with:
             * type: Data type of the variable.
             * description: Explanation of its purpose.
@@ -104,10 +106,11 @@ You are an expert research assistant specializing in synthesizing complex inform
 ```
 5. Conventions:
     * Tool names must follow lower-kebab-case.
-    * Tools reside in .skai/tools/ and are maintained by users.
+    * Custom tools reside in .skai/tools/ and are maintained by users.
+    * Builtin tools are embedded in the binary and extracted to .skai/tools/ during initialization.
 6. Compilation:
     * Skai automatically compiles tools when their source files (main.go) are modified.
-    * Compiled binaries match the folder name (e.g., .skai/tools/summarize/summarize).
+    * Compiled binaries match the folder name (e.g., .skai/tools/web_search/web_search).
 
 ## Config
 1. Definition:
@@ -143,18 +146,20 @@ models:
       temperature: 0.5
       max_tokens: 1000
 tools:
+  currentdatetime: {}  # Builtin tool, no config needed
   web_search:
     env:
       API_KEY: websearch-KEY
       TIMEOUT: 30
-  summarize:
-    env:
-      API_KEY: summarize-KEY
 ```
 
 **Execution Flow**
-1. Skai interrogates tools via --usage to determine runtime dependencies (schema and env).
-2. Skai verifies tool health using the --health command before execution.
-3. Skai retrieves configured environment variables from config.yaml.
-4. If required variables are missing, Skai attempts to resolve them dynamically using defaults specified in the tool’s --usage. Warnings are issued for unresolved variables.
-5. Skai invokes tools with their resolved environments and passes results back to the invoking assistant or workflow.
+1. During initialization:
+    * Skai extracts and compiles builtin tools to .skai/tools/
+    * Skai compiles any custom tools in .skai/tools/
+2. For each tool:
+    * Skai interrogates tools via --usage to determine runtime dependencies (schema and env).
+    * Skai verifies tool health using the --health command before execution.
+    * Skai retrieves configured environment variables from config.yaml.
+    * If required variables are missing, Skai attempts to resolve them dynamically using defaults specified in the tool's --usage. Warnings are issued for unresolved variables.
+3. Skai invokes tools with their resolved environments and passes results back to the invoking assistant or workflow.

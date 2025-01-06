@@ -105,10 +105,7 @@ models:
       top_p: 0.9
 
 tools:
-  summarize:
-    env:
-      MAX_LENGTH: "1000"
-      TIMEOUT: "30s"
+  currentdatetime: {}  # Builtin tool, no config needed
   web_search:
     env:
       TIMEOUT: "30s"

@@ -45,8 +45,16 @@ func NewProcessor(cfg *config.Config) (processor.ProcessManager, error) {
 		return nil, fmt.Errorf("config is required")
 	}
 
-	// Create tool manager
-	toolMgr := tool.NewManager(filepath.Join(cfg.Environment.ConfigDir, "tools"))
+	// Create tool manager and initialize builtin tools
+	toolMgr, err := tool.NewManager(filepath.Join(cfg.Environment.ConfigDir, "tools"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tool manager: %w", err)
+	}
+
+	// Initialize builtin tools
+	if err := toolMgr.InitBuiltinTools(); err != nil {
+		return nil, fmt.Errorf("failed to initialize builtin tools: %w", err)
+	}
 
 	// Create provider registry
 	reg := registry.New()
